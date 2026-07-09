@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
-import Header from './Header'
+import Topbar from './Topbar'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useUIStore } from '../../stores/uiStore'
 import { useAlertStore } from '../../stores/alertStore'
@@ -24,7 +24,7 @@ export default function DashboardLayout() {
     return () => mq.removeEventListener('change', handle)
   }, [])
 
-  /* ── Close mobile drawer on nav ──────── */
+  /* Close mobile on route change */
   useEffect(() => { setMobileOpen(false) }, [loc.pathname])
 
   /* ── WebSocket ───────────────────────── */
@@ -38,27 +38,25 @@ export default function DashboardLayout() {
   useWebSocket(handleWs)
 
   return (
-    <div className="min-h-screen bg-apple-bg flex">
+    <div className="min-h-screen bg-background flex">
       {/* Sidebar */}
       <Sidebar
         open={sidebarOpen}
         mobileOpen={mobileOpen}
-        onToggle={() => setSidebarOpen(p => !p)}
+        onToggle={() => setSidebarOpen(prev => !prev)}
         onMobileClose={() => setMobileOpen(false)}
       />
 
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <Header onMobileMenuOpen={() => setMobileOpen(true)} />
+        <Topbar onMobileMenuOpen={() => setMobileOpen(true)} />
 
-        <main className="flex-1 p-5 sm:p-8 lg:p-10 max-w-[1680px] w-full mx-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
           <Outlet />
         </main>
 
-        <footer className="px-8 py-4 text-center text-xs text-apple-text-secondary tracking-tight">
-          LAN Monitor &copy; {new Date().getFullYear()}
-          <span className="mx-1.5 text-apple-text-tertiary">&bull;</span>
-          Network Security Dashboard
+        <footer className="px-6 py-3 text-center text-[11px] text-muted-foreground border-t border-border">
+          LAN Monitor &copy; {new Date().getFullYear()} &mdash; Network Security Dashboard
         </footer>
       </div>
     </div>

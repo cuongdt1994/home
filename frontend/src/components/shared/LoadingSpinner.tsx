@@ -15,13 +15,8 @@ const sizes = {
 export default function LoadingSpinner({ size = 'md', className, label }: LoadingSpinnerProps) {
   return (
     <div className={cn('flex flex-col items-center justify-center gap-4 py-16', className)}>
-      <div className={cn(
-        'rounded-full animate-spin border-[#e8e8ed] border-t-apple-blue',
-        sizes[size],
-      )} />
-      {label && (
-        <p className="text-sm text-apple-text-secondary font-medium">{label}</p>
-      )}
+      <div className={cn('rounded-full animate-spin border-muted border-t-accent', sizes[size])} />
+      {label && <p className="text-sm text-muted-foreground font-medium">{label}</p>}
     </div>
   )
 }
@@ -29,8 +24,7 @@ export default function LoadingSpinner({ size = 'md', className, label }: Loadin
 export function Skeleton({ className }: { className?: string }) {
   return (
     <div className={cn(
-      'animate-shimmer rounded-2xl',
-      'bg-gradient-to-r from-[#f0f0f5] via-[#fafafa] to-[#f0f0f5] bg-[length:200%_100%]',
+      'animate-shimmer rounded-xl bg-gradient-to-r from-muted via-zinc-800 to-muted bg-[length:200%_100%]',
       className,
     )} />
   )
@@ -38,8 +32,8 @@ export function Skeleton({ className }: { className?: string }) {
 
 export function CardSkeleton() {
   return (
-    <div className="bg-white rounded-2xl border border-apple-border-light p-5 space-y-3 shadow-sm">
-      <Skeleton className="h-10 w-10 rounded-2xl" />
+    <div className="glass rounded-xl p-5 space-y-3">
+      <Skeleton className="h-10 w-10 rounded-xl" />
       <Skeleton className="h-7 w-20 rounded-lg" />
       <Skeleton className="h-4 w-28 rounded-lg" />
     </div>

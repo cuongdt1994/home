@@ -12,9 +12,11 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [hint, setHint] = useState('')
+  const [hintVisible, setHintVisible] = useState(false)
   const refs = useRef<(HTMLInputElement | null)[]>([])
   const login = useAuthStore((s) => s.login)
 
+  /* ── Init: fetch hint + auto-focus ───── */
   useEffect(() => {
     getAuthStatus()
       .then((s) => { if (s?.secret_hint) setHint(s.secret_hint) })
@@ -26,9 +28,13 @@ export default function LoginPage() {
 
   const handleInput = (i: number, v: string) => {
     if (!/^\d*$/.test(v)) return
-    const n = [...code]; n[i] = v.slice(-1); setCode(n)
+    const next = [...code]
+    next[i] = v.slice(-1)
+    setCode(next)
     if (v && i < 5) refs.current[i + 1]?.focus()
-    if (n.filter(Boolean).length === 6) setTimeout(() => submit(n.join('')), 200)
+    if (next.filter(Boolean).length === 6) {
+      setTimeout(() => submit(next.join('')), 200)
+    }
   }
 
   const handleKey = (i: number, e: React.KeyboardEvent) => {
@@ -41,94 +47,109 @@ export default function LoginPage() {
     e.preventDefault()
     const p = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
     if (!p) return
-    const n = [...code]; p.split('').forEach((d, idx) => { if (idx < 6) n[idx] = d })
-    setCode(n)
-    p.length === 6 ? setTimeout(() => submit(p), 200) : refs.current[Math.min(p.length, 5)]?.focus()
+    const next = [...code]
+    p.split('').forEach((d, idx) => { if (idx < 6) next[idx] = d })
+    setCode(next)
+    if (p.length === 6) {
+      setTimeout(() => submit(p), 200)
+    } else {
+      refs.current[Math.min(p.length, 5)]?.focus()
+    }
   }
 
   /* ── Submit ─────────────────────────── */
 
   const submit = async (override?: string) => {
     const c = override || code.join('')
-    if (c.length < 4) { setError('Vui lòng nhập mã 6 chữ số'); return }
-    setError(''); setLoading(true)
+    if (c.length < 4) {
+      setError('Please enter the 6-digit authentication code')
+      return
+    }
+    setError('')
+    setLoading(true)
     try {
       const data = await loginWith2FA(c, true)
       setSuccess(true)
       setTimeout(() => login(data.access_token, 'admin'), 700)
     } catch (e: any) {
-      setError(e.message || 'Mã không đúng. Vui lòng thử lại.')
+      setError(e.message || 'Invalid code. Please try again.')
       setCode(['', '', '', '', '', ''])
       refs.current[0]?.focus()
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }
 
   /* ── Digit input style ──────────────── */
 
   const digitClass = (d: string) =>
     cn(
-      'w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl sm:text-3xl font-semibold rounded-2xl border-2',
-      'transition-all duration-200 ease-out bg-white outline-none',
-      'focus:border-apple-blue focus:shadow-[0_0_0_4px_rgba(0,113,227,0.12)]',
-      'hover:border-apple-border',
+      'w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl sm:text-3xl font-semibold rounded-xl border-2',
+      'transition-all duration-200 bg-card outline-none',
+      'focus:border-accent focus:ring-2 focus:ring-accent/25',
+      'hover:border-zinc-600',
       d
-        ? 'border-apple-blue bg-[#e8f4fd]'
-        : 'border-apple-border-light',
-      error && 'border-apple-red focus:border-apple-red focus:shadow-[0_0_0_4px_rgba(255,59,48,0.12)]',
-      success && 'border-apple-green bg-[#e8f8ee]',
+        ? 'border-accent bg-accent/10'
+        : 'border-border',
+      error && 'border-destructive focus:border-destructive focus:ring-destructive/25',
+      success && 'border-green-500 bg-green-500/10',
     )
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-apple-bg p-4">
-      <div className="w-full max-w-[400px]">
-        {/* ── Logo ────────────────────────── */}
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="w-full max-w-[420px]">
+        {/* ── Logo / Brand ────────────────── */}
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-apple-blue mb-6 shadow-xl shadow-apple-blue/20">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent mb-6 shadow-xl shadow-accent/25">
             <Shield className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-[28px] font-semibold tracking-tight text-apple-text">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
             LAN Monitor
           </h1>
-          <p className="text-[15px] text-apple-text-secondary mt-2 font-normal">
-            Đăng nhập vào bảng điều khiển
+          <p className="text-sm text-muted-foreground mt-2">
+            Sign in to your dashboard
           </p>
         </div>
 
-        {/* ── 2FA Card ────────────────────── */}
-        <Card padding="xl" glass className="shadow-lg">
+        {/* ── 2FA Card (glass) ────────────── */}
+        <Card padding="lg" glass className="shadow-xl">
           <CardContent>
+            {/* Header */}
             <div className="text-center mb-7">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#e8f4fd] mb-5">
-                <Smartphone className="w-7 h-7 text-apple-blue" />
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-accent/15 mb-4">
+                <Smartphone className="w-6 h-6 text-accent-400" />
               </div>
-              <h2 className="font-semibold text-[17px] text-apple-text">
-                Xác thực hai lớp
+              <h2 className="font-semibold text-base text-foreground">
+                Two-Factor Authentication
               </h2>
-              <p className="text-[14px] text-apple-text-secondary mt-1.5">
-                Nhập mã 6 chữ số từ ứng dụng Authenticator
+              <p className="text-sm text-muted-foreground mt-1.5">
+                Enter the 6-digit code from your authenticator app
               </p>
             </div>
 
-            {/* Digits */}
-            <div className="flex justify-center gap-2.5 sm:gap-3 mb-6" onPaste={handlePaste}>
+            {/* Digit inputs */}
+            <div className="flex justify-center gap-2.5 sm:gap-3 mb-5" onPaste={handlePaste}>
               {code.map((d, i) => (
                 <input
                   key={i}
                   ref={(el) => { refs.current[i] = el }}
-                  type="text" inputMode="numeric" maxLength={1} value={d}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={1}
+                  value={d}
                   autoComplete="one-time-code"
                   onChange={(e) => handleInput(i, e.target.value)}
                   onKeyDown={(e) => handleKey(i, e)}
                   className={digitClass(d)}
                   disabled={loading || success}
-                  aria-label={`Chữ số ${i + 1}`}
+                  aria-label={`Digit ${i + 1}`}
                 />
               ))}
             </div>
 
             {/* Error */}
             {error && (
-              <div className="flex items-start gap-2.5 text-[14px] text-apple-red bg-[#fde8e8] rounded-2xl px-4 py-3.5 mb-5 animate-scale-in">
+              <div className="flex items-start gap-2.5 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4 animate-scale-in">
                 <AlertCircle className="w-[18px] h-[18px] shrink-0 mt-px" />
                 <span>{error}</span>
               </div>
@@ -136,9 +157,9 @@ export default function LoginPage() {
 
             {/* Success */}
             {success && (
-              <div className="flex items-center justify-center gap-2 text-[14px] text-[#248a3d] bg-[#e8f8ee] rounded-2xl px-4 py-3.5 mb-5 animate-scale-in">
+              <div className="flex items-center justify-center gap-2 text-sm text-green-400 bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3 mb-4 animate-scale-in">
                 <Check className="w-[18px] h-[18px]" />
-                Xác thực thành công — đang chuyển hướng...
+                Verified — redirecting...
               </div>
             )}
 
@@ -152,23 +173,36 @@ export default function LoginPage() {
             >
               {!loading && (
                 <>
-                  Đăng nhập
+                  Sign in
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
-              {loading && 'Đang xác thực...'}
+              {loading && 'Verifying...'}
             </Button>
 
-            {/* Hint */}
-            <p className="text-center text-[13px] text-apple-text-secondary mt-5 flex items-center justify-center gap-1.5">
-              <Key className="w-3.5 h-3.5" />
-              Mở Google Authenticator hoặc Authy
-            </p>
-            {hint && (
-              <p className="text-center text-[12px] text-apple-text-tertiary mt-2 font-mono">
-                Secret: &hellip;{hint}
+            {/* Hint — collapsible, muted */}
+            <div className="mt-5 pt-4 border-t border-border">
+              <p className="text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5">
+                <Key className="w-3.5 h-3.5" />
+                Open Google Authenticator or Authy
               </p>
-            )}
+
+              {hint && (
+                <div className="mt-3 text-center">
+                  <button
+                    onClick={() => setHintVisible(!hintVisible)}
+                    className="text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors underline underline-offset-2"
+                  >
+                    {hintVisible ? 'Hide' : 'Show'} secret key
+                  </button>
+                  {hintVisible && (
+                    <p className="text-[11px] text-zinc-600 mt-1.5 font-mono bg-muted rounded-lg py-1.5 px-3 inline-block animate-scale-in">
+                      &hellip;{hint}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

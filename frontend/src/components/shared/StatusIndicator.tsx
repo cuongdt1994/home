@@ -7,9 +7,9 @@ interface StatusIndicatorProps {
 }
 
 const dots = {
-  online:  'bg-apple-green shadow-[0_0_8px_rgba(52,199,89,0.35)]',
-  offline: 'bg-apple-red',
-  unknown: 'bg-apple-border',
+  online:  'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]',
+  offline: 'bg-red-500',
+  unknown: 'bg-zinc-600',
 }
 
 const sizes = {
@@ -21,7 +21,7 @@ export default function StatusIndicator({ status, label, size = 'sm' }: StatusIn
   return (
     <div className="flex items-center gap-2">
       <span className={cn('rounded-full shrink-0 transition-colors duration-300', dots[status], sizes[size])} />
-      <span className="text-[13px] text-apple-text-secondary font-medium">{label}</span>
+      <span className="text-[13px] text-muted-foreground font-medium">{label}</span>
     </div>
   )
 }
