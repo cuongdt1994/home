@@ -13,68 +13,52 @@ export default function DashboardLayout() {
   const addAlert = useAlertStore((s) => s.addAlert)
   const loc = useLocation()
 
-  // Auto-collapse sidebar on smaller screens
+  /* ── Responsive sidebar ──────────────── */
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 1023px)')
     const handle = (e: MediaQueryListEvent | MediaQueryList) => {
-      if (e.matches) {
-        setSidebarOpen(false)
-      } else {
-        setSidebarOpen(true)
-      }
+      setSidebarOpen(!e.matches)
     }
     handle(mq)
     mq.addEventListener('change', handle)
     return () => mq.removeEventListener('change', handle)
   }, [])
 
-  // Close mobile drawer on route change
-  useEffect(() => {
-    setMobileOpen(false)
-  }, [loc.pathname])
+  /* ── Close mobile drawer on nav ──────── */
+  useEffect(() => { setMobileOpen(false) }, [loc.pathname])
 
-  // WebSocket message handler
-  const handleWsMessage = useCallback(
-    (msg: any) => {
-      switch (msg.type) {
-        case 'connected':
-          setWsStatus('connected')
-          break
-        case 'alert':
-          addAlert(msg.payload)
-          break
-        case 'heartbeat':
-          setWsStatus('connected')
-          break
-      }
-    },
-    [setWsStatus, addAlert],
-  )
-
-  useWebSocket(handleWsMessage)
+  /* ── WebSocket ───────────────────────── */
+  const handleWs = useCallback((msg: any) => {
+    switch (msg.type) {
+      case 'connected': setWsStatus('connected'); break
+      case 'alert':     addAlert(msg.payload);    break
+      case 'heartbeat': setWsStatus('connected'); break
+    }
+  }, [setWsStatus, addAlert])
+  useWebSocket(handleWs)
 
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* ── Sidebar ──────────────────────── */}
+    <div className="min-h-screen bg-apple-bg flex">
+      {/* Sidebar */}
       <Sidebar
         open={sidebarOpen}
         mobileOpen={mobileOpen}
-        onToggle={() => setSidebarOpen((prev) => !prev)}
+        onToggle={() => setSidebarOpen(p => !p)}
         onMobileClose={() => setMobileOpen(false)}
       />
 
-      {/* ── Main content area ────────────── */}
+      {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0">
         <Header onMobileMenuOpen={() => setMobileOpen(true)} />
 
-        {/* Page content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
+        <main className="flex-1 p-5 sm:p-8 lg:p-10 max-w-[1680px] w-full mx-auto">
           <Outlet />
         </main>
 
-        {/* Subtle footer */}
-        <footer className="px-6 py-3 border-t border-border text-center text-xs text-muted-foreground">
-          LAN Monitor &copy; {new Date().getFullYear()} &mdash; Network Security Dashboard
+        <footer className="px-8 py-4 text-center text-xs text-apple-text-secondary tracking-tight">
+          LAN Monitor &copy; {new Date().getFullYear()}
+          <span className="mx-1.5 text-apple-text-tertiary">&bull;</span>
+          Network Security Dashboard
         </footer>
       </div>
     </div>

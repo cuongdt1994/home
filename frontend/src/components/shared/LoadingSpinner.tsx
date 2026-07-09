@@ -12,50 +12,36 @@ const sizes = {
   lg: 'w-12 h-12 border-4',
 }
 
-export default function LoadingSpinner({
-  size = 'md',
-  className,
-  label,
-}: LoadingSpinnerProps) {
+export default function LoadingSpinner({ size = 'md', className, label }: LoadingSpinnerProps) {
   return (
-    <div
-      className={cn(
-        'flex flex-col items-center justify-center gap-3 py-12',
-        className,
-      )}
-    >
-      <div
-        className={cn(
-          'rounded-full animate-spin border-muted border-t-primary',
-          sizes[size],
-        )}
-      />
+    <div className={cn('flex flex-col items-center justify-center gap-4 py-16', className)}>
+      <div className={cn(
+        'rounded-full animate-spin border-[#e8e8ed] border-t-apple-blue',
+        sizes[size],
+      )} />
       {label && (
-        <p className="text-sm text-muted-foreground font-medium">{label}</p>
+        <p className="text-sm text-apple-text-secondary font-medium">{label}</p>
       )}
     </div>
   )
 }
 
-/* ── Skeleton loader ───────────────────── */
-
 export function Skeleton({ className }: { className?: string }) {
   return (
-    <div
-      className={cn(
-        'animate-shimmer rounded-xl bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 bg-[length:200%_100%]',
-        className,
-      )}
-    />
+    <div className={cn(
+      'animate-shimmer rounded-2xl',
+      'bg-gradient-to-r from-[#f0f0f5] via-[#fafafa] to-[#f0f0f5] bg-[length:200%_100%]',
+      className,
+    )} />
   )
 }
 
 export function CardSkeleton() {
   return (
-    <div className="bg-card border border-border rounded-xl p-5 space-y-3 shadow-xs">
-      <Skeleton className="h-10 w-10 rounded-xl" />
-      <Skeleton className="h-7 w-20" />
-      <Skeleton className="h-4 w-28" />
+    <div className="bg-white rounded-2xl border border-apple-border-light p-5 space-y-3 shadow-sm">
+      <Skeleton className="h-10 w-10 rounded-2xl" />
+      <Skeleton className="h-7 w-20 rounded-lg" />
+      <Skeleton className="h-4 w-28 rounded-lg" />
     </div>
   )
 }

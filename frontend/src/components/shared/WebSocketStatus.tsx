@@ -7,39 +7,32 @@ interface WebSocketStatusProps {
 
 const styles = {
   connected: {
-    dot: 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]',
-    text: 'text-emerald-700',
-    bg: 'bg-emerald-50 border-emerald-200',
+    dot: 'bg-apple-green shadow-[0_0_8px_rgba(52,199,89,0.4)]',
+    text: 'text-[#248a3d]',
+    bg: 'bg-[#e8f8ee]',
     label: 'Live',
   },
   connecting: {
-    dot: 'bg-amber-500 animate-pulse',
-    text: 'text-amber-700',
-    bg: 'bg-amber-50 border-amber-200',
+    dot: 'bg-apple-orange animate-pulse',
+    text: 'text-[#c76f00]',
+    bg: 'bg-[#fef3e6]',
     label: '...',
   },
   disconnected: {
-    dot: 'bg-rose-500',
-    text: 'text-rose-700',
-    bg: 'bg-rose-50 border-rose-200',
+    dot: 'bg-apple-red',
+    text: 'text-[#cc1f1f]',
+    bg: 'bg-[#fde8e8]',
     label: 'Off',
   },
 }
 
-export default function WebSocketStatus({
-  status,
-  className,
-}: WebSocketStatusProps) {
+export default function WebSocketStatus({ status, className }: WebSocketStatusProps) {
   const s = styles[status]
   return (
-    <div
-      className={cn(
-        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
-        s.bg,
-        s.text,
-        className,
-      )}
-    >
+    <div className={cn(
+      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-300',
+      s.bg, s.text, className,
+    )}>
       <span className={cn('w-1.5 h-1.5 rounded-full', s.dot)} />
       {s.label}
     </div>

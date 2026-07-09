@@ -1,13 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import {
-  Shield,
-  ArrowRight,
-  Smartphone,
-  Key,
-  Check,
-  AlertCircle,
-  Loader2,
-} from 'lucide-react'
+import { Shield, ArrowRight, Smartphone, Key, Check, AlertCircle } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { loginWith2FA, getAuthStatus } from '../api/auth'
 import { cn } from '../lib/utils'
@@ -23,12 +15,9 @@ export default function LoginPage() {
   const refs = useRef<(HTMLInputElement | null)[]>([])
   const login = useAuthStore((s) => s.login)
 
-  // Fetch auth status hint on mount, focus first input
   useEffect(() => {
     getAuthStatus()
-      .then((s) => {
-        if (s?.secret_hint) setHint(s.secret_hint)
-      })
+      .then((s) => { if (s?.secret_hint) setHint(s.secret_hint) })
       .catch(() => {})
     refs.current[0]?.focus()
   }, [])
@@ -37,155 +26,123 @@ export default function LoginPage() {
 
   const handleInput = (i: number, v: string) => {
     if (!/^\d*$/.test(v)) return
-    const next = [...code]
-    next[i] = v.slice(-1)
-    setCode(next)
+    const n = [...code]; n[i] = v.slice(-1); setCode(n)
     if (v && i < 5) refs.current[i + 1]?.focus()
-
-    const filled = next.filter(Boolean).length
-    if (filled === 6) {
-      setTimeout(() => submit(next.join('')), 200)
-    }
+    if (n.filter(Boolean).length === 6) setTimeout(() => submit(n.join('')), 200)
   }
 
   const handleKey = (i: number, e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace' && !code[i] && i > 0) {
-      refs.current[i - 1]?.focus()
-    }
-    if (e.key === 'ArrowLeft' && i > 0) {
-      refs.current[i - 1]?.focus()
-    }
-    if (e.key === 'ArrowRight' && i < 5) {
-      refs.current[i + 1]?.focus()
-    }
+    if (e.key === 'Backspace' && !code[i] && i > 0) refs.current[i - 1]?.focus()
+    if (e.key === 'ArrowLeft' && i > 0) refs.current[i - 1]?.focus()
+    if (e.key === 'ArrowRight' && i < 5) refs.current[i + 1]?.focus()
   }
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault()
     const p = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
     if (!p) return
-    const next = [...code]
-    p.split('').forEach((d, idx) => {
-      if (idx < 6) next[idx] = d
-    })
-    setCode(next)
-    if (p.length === 6) {
-      setTimeout(() => submit(p), 200)
-    } else {
-      refs.current[Math.min(p.length, 5)]?.focus()
-    }
+    const n = [...code]; p.split('').forEach((d, idx) => { if (idx < 6) n[idx] = d })
+    setCode(n)
+    p.length === 6 ? setTimeout(() => submit(p), 200) : refs.current[Math.min(p.length, 5)]?.focus()
   }
 
   /* ── Submit ─────────────────────────── */
 
   const submit = async (override?: string) => {
     const c = override || code.join('')
-    if (c.length < 4) {
-      setError('Enter your 6-digit authentication code')
-      return
-    }
-    setError('')
-    setLoading(true)
+    if (c.length < 4) { setError('Vui lòng nhập mã 6 chữ số'); return }
+    setError(''); setLoading(true)
     try {
       const data = await loginWith2FA(c, true)
       setSuccess(true)
-      setTimeout(() => login(data.access_token, 'admin'), 600)
+      setTimeout(() => login(data.access_token, 'admin'), 700)
     } catch (e: any) {
-      setError(e.message || 'Invalid code. Please try again.')
+      setError(e.message || 'Mã không đúng. Vui lòng thử lại.')
       setCode(['', '', '', '', '', ''])
       refs.current[0]?.focus()
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
-  /* ── Render ─────────────────────────── */
+  /* ── Digit input style ──────────────── */
 
   const digitClass = (d: string) =>
     cn(
-      'w-11 h-14 sm:w-12 sm:h-16 text-center text-xl sm:text-2xl font-bold rounded-xl border-2',
-      'transition-all duration-150 outline-none bg-card',
-      'focus:border-primary focus:ring-4 focus:ring-primary/10',
-      'hover:border-slate-300',
+      'w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl sm:text-3xl font-semibold rounded-2xl border-2',
+      'transition-all duration-200 ease-out bg-white outline-none',
+      'focus:border-apple-blue focus:shadow-[0_0_0_4px_rgba(0,113,227,0.12)]',
+      'hover:border-apple-border',
       d
-        ? 'border-primary bg-primary-50/50'
-        : 'border-border',
-      error && 'border-destructive focus:border-destructive focus:ring-destructive/10',
-      success && 'border-emerald-500 bg-emerald-50',
+        ? 'border-apple-blue bg-[#e8f4fd]'
+        : 'border-apple-border-light',
+      error && 'border-apple-red focus:border-apple-red focus:shadow-[0_0_0_4px_rgba(255,59,48,0.12)]',
+      success && 'border-apple-green bg-[#e8f8ee]',
     )
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-sm">
-        {/* ── Logo / Brand ────────────────── */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary mb-5 shadow-lg shadow-primary/20">
-            <Shield className="w-7 h-7 text-primary-foreground" />
+    <div className="min-h-screen flex items-center justify-center bg-apple-bg p-4">
+      <div className="w-full max-w-[400px]">
+        {/* ── Logo ────────────────────────── */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-apple-blue mb-6 shadow-xl shadow-apple-blue/20">
+            <Shield className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-[28px] font-semibold tracking-tight text-apple-text">
             LAN Monitor
           </h1>
-          <p className="text-sm text-muted-foreground mt-1.5">
-            Sign in to your dashboard
+          <p className="text-[15px] text-apple-text-secondary mt-2 font-normal">
+            Đăng nhập vào bảng điều khiển
           </p>
         </div>
 
         {/* ── 2FA Card ────────────────────── */}
-        <Card padding="lg" className="shadow-md">
+        <Card padding="xl" glass className="shadow-lg">
           <CardContent>
-            {/* Icon + title */}
-            <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary-50 mb-4">
-                <Smartphone className="w-6 h-6 text-primary-600" />
+            <div className="text-center mb-7">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#e8f4fd] mb-5">
+                <Smartphone className="w-7 h-7 text-apple-blue" />
               </div>
-              <h2 className="font-semibold text-base">Two-Factor Authentication</h2>
-              <p className="text-xs text-muted-foreground mt-1.5">
-                Enter the 6-digit code from your authenticator app
+              <h2 className="font-semibold text-[17px] text-apple-text">
+                Xác thực hai lớp
+              </h2>
+              <p className="text-[14px] text-apple-text-secondary mt-1.5">
+                Nhập mã 6 chữ số từ ứng dụng Authenticator
               </p>
             </div>
 
-            {/* Digit inputs */}
-            <div
-              className="flex justify-center gap-2 sm:gap-2.5 mb-5"
-              onPaste={handlePaste}
-            >
+            {/* Digits */}
+            <div className="flex justify-center gap-2.5 sm:gap-3 mb-6" onPaste={handlePaste}>
               {code.map((d, i) => (
                 <input
                   key={i}
-                  ref={(el) => {
-                    refs.current[i] = el
-                  }}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={d}
+                  ref={(el) => { refs.current[i] = el }}
+                  type="text" inputMode="numeric" maxLength={1} value={d}
                   autoComplete="one-time-code"
                   onChange={(e) => handleInput(i, e.target.value)}
                   onKeyDown={(e) => handleKey(i, e)}
                   className={digitClass(d)}
                   disabled={loading || success}
-                  aria-label={`Digit ${i + 1}`}
+                  aria-label={`Chữ số ${i + 1}`}
                 />
               ))}
             </div>
 
-            {/* Error message */}
+            {/* Error */}
             {error && (
-              <div className="flex items-start gap-2 text-sm text-destructive bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 animate-scale-in">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-2.5 text-[14px] text-apple-red bg-[#fde8e8] rounded-2xl px-4 py-3.5 mb-5 animate-scale-in">
+                <AlertCircle className="w-[18px] h-[18px] shrink-0 mt-px" />
                 <span>{error}</span>
               </div>
             )}
 
-            {/* Success message */}
+            {/* Success */}
             {success && (
-              <div className="flex items-center justify-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mb-4 animate-scale-in">
-                <Check className="w-4 h-4" />
-                Verified &mdash; redirecting&hellip;
+              <div className="flex items-center justify-center gap-2 text-[14px] text-[#248a3d] bg-[#e8f8ee] rounded-2xl px-4 py-3.5 mb-5 animate-scale-in">
+                <Check className="w-[18px] h-[18px]" />
+                Xác thực thành công — đang chuyển hướng...
               </div>
             )}
 
-            {/* Submit button */}
+            {/* Submit */}
             <Button
               onClick={() => submit()}
               disabled={loading || success || code.join('').length < 4}
@@ -195,20 +152,20 @@ export default function LoginPage() {
             >
               {!loading && (
                 <>
-                  Sign in
+                  Đăng nhập
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
-              {loading && 'Verifying...'}
+              {loading && 'Đang xác thực...'}
             </Button>
 
-            {/* Footer hint */}
-            <p className="text-center text-xs text-muted-foreground mt-4 flex items-center justify-center gap-1.5">
-              <Key className="w-3 h-3" />
-              Open Google Authenticator or Authy
+            {/* Hint */}
+            <p className="text-center text-[13px] text-apple-text-secondary mt-5 flex items-center justify-center gap-1.5">
+              <Key className="w-3.5 h-3.5" />
+              Mở Google Authenticator hoặc Authy
             </p>
             {hint && (
-              <p className="text-center text-[11px] text-muted-foreground/50 mt-1.5 font-mono">
+              <p className="text-center text-[12px] text-apple-text-tertiary mt-2 font-mono">
                 Secret: &hellip;{hint}
               </p>
             )}

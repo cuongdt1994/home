@@ -28,30 +28,37 @@ export default function Header({ onMobileMenuOpen }: HeaderProps) {
     nav('/login')
   }
 
+  const wsVariant =
+    wsStatus === 'connected' ? 'green' :
+    wsStatus === 'connecting' ? 'orange' : 'red'
+
+  const wsLabel =
+    wsStatus === 'connected' ? 'Live' :
+    wsStatus === 'connecting' ? 'Connecting...' : 'Offline'
+
   return (
-    <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
-      <div className="flex items-center justify-between h-14 px-4 sm:px-6">
-        {/* ── Left: mobile trigger + service pills ── */}
-        <div className="flex items-center gap-3 min-w-0">
-          {/* Mobile sidebar trigger */}
+    <header className="sticky top-0 z-30 glass border-b border-white/20">
+      <div className="flex items-center justify-between h-14 px-5 sm:px-7">
+        {/* ── Left ────────────────────────── */}
+        <div className="flex items-center gap-4 min-w-0">
           <button
             onClick={onMobileMenuOpen}
-            className="p-2 -ml-2 rounded-lg hover:bg-accent text-muted-foreground md:hidden shrink-0"
+            className="p-2 -ml-2 rounded-full hover:bg-black/5 text-apple-text-secondary md:hidden shrink-0 transition-colors duration-200"
             aria-label="Open menu"
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-[18px] h-[18px]" />
           </button>
 
-          {/* Service status pills */}
-          <div className="hidden sm:flex items-center gap-2 flex-wrap">
+          {/* Service pills — desktop */}
+          <div className="hidden sm:flex items-center gap-2">
             {SERVICES.map(({ key, label }) => {
-              const status = serviceStatus[key] || 'unknown'
+              const s = serviceStatus[key] || 'unknown'
               return (
                 <Badge
                   key={key}
                   variant={
-                    status === 'online' ? 'success' :
-                    status === 'offline' ? 'destructive' : 'default'
+                    s === 'online' ? 'green' :
+                    s === 'offline' ? 'red' : 'default'
                   }
                   size="sm"
                   dot
@@ -62,17 +69,17 @@ export default function Header({ onMobileMenuOpen }: HeaderProps) {
             })}
           </div>
 
-          {/* Compact status dots on mobile */}
-          <div className="flex sm:hidden items-center gap-1.5">
+          {/* Compact dots — mobile */}
+          <div className="flex sm:hidden items-center gap-2">
             {SERVICES.map(({ key }) => {
-              const status = serviceStatus[key] || 'unknown'
+              const s = serviceStatus[key] || 'unknown'
               return (
                 <span
                   key={key}
                   className={cn(
-                    'w-1.5 h-1.5 rounded-full',
-                    status === 'online' ? 'bg-emerald-500' :
-                    status === 'offline' ? 'bg-red-500' : 'bg-slate-300',
+                    'w-2 h-2 rounded-full transition-colors duration-300',
+                    s === 'online' ? 'bg-apple-green shadow-[0_0_6px_rgba(52,199,89,0.5)]' :
+                    s === 'offline' ? 'bg-apple-red' : 'bg-apple-border',
                   )}
                   title={key}
                 />
@@ -81,48 +88,33 @@ export default function Header({ onMobileMenuOpen }: HeaderProps) {
           </div>
         </div>
 
-        {/* ── Right: WS status, user, theme, logout ── */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* WebSocket indicator */}
-          <Badge
-            variant={
-              wsStatus === 'connected' ? 'success' :
-              wsStatus === 'connecting' ? 'warning' : 'destructive'
-            }
-            size="sm"
-            dot
-            className="hidden sm:inline-flex"
-          >
-            {wsStatus === 'connected' ? 'Live' : wsStatus === 'connecting' ? '...' : 'Off'}
+        {/* ── Right ───────────────────────── */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* WS badge */}
+          <Badge variant={wsVariant} size="sm" dot className="hidden sm:inline-flex">
+            {wsLabel}
           </Badge>
 
-          {/* Username */}
-          <span className="text-xs text-muted-foreground font-medium hidden sm:inline-block max-w-[100px] truncate">
+          <span className="text-[13px] text-apple-text-secondary font-medium hidden sm:inline-block max-w-[100px] truncate ml-2">
             {username || 'admin'}
           </span>
 
-          <div className="w-px h-5 bg-border hidden sm:block" />
+          <div className="w-px h-4 bg-apple-border-light hidden sm:block mx-1" />
 
-          {/* Theme toggle */}
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+            className="p-2 rounded-full hover:bg-black/5 text-apple-text-secondary hover:text-apple-text transition-colors duration-200"
+            title={`Sang chế độ ${theme === 'light' ? 'tối' : 'sáng'}`}
           >
-            {theme === 'light' ? (
-              <Moon className="w-4 h-4" />
-            ) : (
-              <Sun className="w-4 h-4" />
-            )}
+            {theme === 'light' ? <Moon className="w-[18px] h-[18px]" /> : <Sun className="w-[18px] h-[18px]" />}
           </button>
 
-          {/* Logout */}
           <button
             onClick={handleLogout}
-            className="p-2 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-destructive transition-colors"
-            title="Sign out"
+            className="p-2 rounded-full hover:bg-apple-red/10 text-apple-text-secondary hover:text-apple-red transition-colors duration-200"
+            title="Đăng xuất"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-[18px] h-[18px]" />
           </button>
         </div>
       </div>

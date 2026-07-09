@@ -1,6 +1,6 @@
 import { cn } from '../../lib/utils'
 
-type BadgeVariant = 'default' | 'primary' | 'success' | 'warning' | 'destructive' | 'info'
+type BadgeVariant = 'default' | 'blue' | 'green' | 'orange' | 'red' | 'purple' | 'teal'
 type BadgeSize = 'sm' | 'md'
 
 interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
@@ -10,31 +10,32 @@ interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  default: 'bg-muted text-muted-foreground border-slate-200',
-  primary: 'bg-primary-50 text-primary-700 border-primary-200',
-  success: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  warning: 'bg-amber-50 text-amber-700 border-amber-200',
-  destructive: 'bg-red-50 text-red-700 border-red-200',
-  info: 'bg-sky-50 text-sky-700 border-sky-200',
+  default: 'bg-[#f0f0f5] text-apple-text-secondary',
+  blue:    'bg-[#e8f4fd] text-[#0071e3]',
+  green:   'bg-[#e8f8ee] text-[#248a3d]',
+  orange:  'bg-[#fef3e6] text-[#c76f00]',
+  red:     'bg-[#fde8e8] text-[#cc1f1f]',
+  purple:  'bg-[#f3e8fa] text-[#8944ab]',
+  teal:    'bg-[#e6f6fa] text-[#007c8c]',
 }
 
 const dotColors: Record<BadgeVariant, string> = {
-  default: 'bg-slate-400',
-  primary: 'bg-primary-500',
-  success: 'bg-emerald-500',
-  warning: 'bg-amber-500',
-  destructive: 'bg-red-500',
-  info: 'bg-sky-500',
+  default: 'bg-apple-text-tertiary',
+  blue:    'bg-apple-blue',
+  green:   'bg-apple-green',
+  orange:  'bg-apple-orange',
+  red:     'bg-apple-red',
+  purple:  'bg-apple-purple',
+  teal:    'bg-apple-teal',
 }
 
 const sizeStyles: Record<BadgeSize, string> = {
-  sm: 'px-1.5 py-0 text-[10px]',
-  md: 'px-2.5 py-0.5 text-xs',
+  sm: 'px-2 py-0.5 text-[11px] font-medium gap-1',
+  md: 'px-2.5 py-1 text-xs font-medium gap-1.5',
 }
 
 /**
- * Compact badge/pill for statuses, tags, counts.
- * Set `dot` to prefix a small colored circle.
+ * Apple-style badge: nền màu nhẹ, chữ đậm vừa, bo tròn nhiều.
  */
 export function Badge({
   className,
@@ -47,7 +48,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border font-medium whitespace-nowrap',
+        'inline-flex items-center rounded-full whitespace-nowrap tracking-tight',
         variantStyles[variant],
         sizeStyles[size],
         className,

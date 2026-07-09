@@ -1,95 +1,83 @@
 @import "tailwindcss";
 
-/* ═══════════════════════════════════════════════════
-   LAN Monitor — Design System Tokens
-   Modern SaaS theme: Slate neutrals, sharp Blue primary
-   ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════
+   LAN Monitor — Apple Design System
+   Lấy cảm hứng từ Apple.com: tinh gọn, nhiều khoảng trắng,
+   glass morphism, animation mượt mà.
+   ═══════════════════════════════════════════════════════════ */
 
 @theme {
-  /* ── Brand / Primary ─────────────── */
-  --color-primary: #2563eb;           /* blue-600 */
-  --color-primary-foreground: #ffffff;
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
+  /* ── Accent (Apple Blue) ───────────── */
+  --color-apple-blue: #0071e3;
+  --color-apple-blue-hover: #0077ed;
+  --color-apple-blue-active: #006edb;
+  --color-apple-blue-light: #e8f4fd;
 
-  /* ── Neutrals (Slate) ────────────── */
-  --color-background: #f8fafc;        /* slate-50 */
-  --color-foreground: #0f172a;        /* slate-900 */
-  --color-card: #ffffff;
-  --color-card-foreground: #0f172a;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #0f172a;
+  /* ── Neutrals (Apple grays) ────────── */
+  --color-apple-bg: #f5f5f7;            /* Nền chính */
+  --color-apple-bg-secondary: #fafafa;   /* Nền phụ */
+  --color-apple-text: #1d1d1f;           /* Chữ chính */
+  --color-apple-text-secondary: #86868b;  /* Chữ phụ */
+  --color-apple-text-tertiary: #aeaeb2;   /* Chữ placeholder */
+  --color-apple-border: #d2d2d7;          /* Viền tinh tế */
+  --color-apple-border-light: #e8e8ed;    /* Viền nhẹ */
+  --color-apple-divider: #f0f0f5;         /* Đường phân cách */
 
-  --color-secondary: #f1f5f9;         /* slate-100 */
-  --color-secondary-foreground: #334155; /* slate-700 */
+  /* ── Surface ────────────────────────── */
+  --color-apple-card: #ffffff;
+  --color-apple-card-hover: #fafafa;
+  --color-apple-glass: rgba(255, 255, 255, 0.72);
 
-  --color-muted: #f1f5f9;             /* slate-100 */
-  --color-muted-foreground: #64748b;  /* slate-500 */
+  /* ── Semantic ───────────────────────── */
+  --color-apple-red: #ff3b30;
+  --color-apple-orange: #ff9500;
+  --color-apple-yellow: #ffcc00;
+  --color-apple-green: #34c759;
+  --color-apple-teal: #5ac8fa;
+  --color-apple-purple: #af52de;
+  --color-apple-pink: #ff2d55;
 
-  --color-accent: #f1f5f9;            /* slate-100 */
-  --color-accent-foreground: #1e293b; /* slate-800 */
+  /* ── Sidebar (dark, Apple style) ───── */
+  --color-sidebar-bg: #1d1d1f;
+  --color-sidebar-bg-hover: #2d2d2f;
+  --color-sidebar-bg-active: #0071e3;
+  --color-sidebar-text: #86868b;
+  --color-sidebar-text-hover: #f5f5f7;
+  --color-sidebar-text-active: #ffffff;
+  --color-sidebar-border: #2d2d2f;
 
-  --color-border: #e2e8f0;            /* slate-200 */
-  --color-input: #e2e8f0;             /* slate-200 */
-  --color-ring: #2563eb;              /* primary (blue-600) */
+  /* ── Typography ─────────────────────── */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
-  /* ── Semantic ─────────────────────── */
-  --color-success: #059669;            /* emerald-600 */
-  --color-success-foreground: #ffffff;
-  --color-warning: #d97706;            /* amber-600 */
-  --color-warning-foreground: #ffffff;
-  --color-destructive: #dc2626;        /* red-600 */
-  --color-destructive-foreground: #ffffff;
-  --color-info: #2563eb;               /* blue-600 */
-  --color-info-foreground: #ffffff;
+  /* ── Border Radius ──────────────────── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 980px;                /* Pill shape */
 
-  /* ── Sidebar (dark variant) ──────── */
-  --color-sidebar: #0f172a;            /* slate-900 */
-  --color-sidebar-foreground: #94a3b8; /* slate-400 */
-  --color-sidebar-primary: #3b82f6;    /* blue-500 */
-  --color-sidebar-primary-foreground: #ffffff;
-  --color-sidebar-accent: #1e293b;     /* slate-800 */
-  --color-sidebar-accent-foreground: #e2e8f0; /* slate-200 */
-  --color-sidebar-border: #1e293b;     /* slate-800 */
-  --color-sidebar-muted: #334155;      /* slate-700 */
+  /* ── Shadows (layered, Apple style) ─── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 4px rgba(0, 0, 0, 0.02);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.04), 0 2px 6px rgba(0, 0, 0, 0.02);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.03);
+  --shadow-xl: 0 16px 40px rgba(0, 0, 0, 0.06), 0 8px 20px rgba(0, 0, 0, 0.03);
+  --shadow-button: 0 1px 2px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+  --shadow-input-focus: 0 0 0 4px rgba(0, 113, 227, 0.12);
 
-  /* ── Typography ───────────────────── */
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', monospace;
-
-  /* ── Radii ────────────────────────── */
-  --radius-xs: 0.25rem;    /* 4px */
-  --radius-sm: 0.375rem;   /* 6px */
-  --radius-md: 0.5rem;     /* 8px */
-  --radius-lg: 0.75rem;    /* 12px */
-  --radius-xl: 1rem;       /* 16px */
-  --radius-2xl: 1.5rem;    /* 24px */
-
-  /* ── Shadows ──────────────────────── */
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.04);
-
-  /* ── Animations ───────────────────── */
-  --animate-fade-in: fade-in 0.2s ease-out;
-  --animate-slide-up: slide-up 0.3s ease-out;
-  --animate-slide-down: slide-down 0.2s ease-out;
-  --animate-scale-in: scale-in 0.15s ease-out;
-  --animate-shimmer: shimmer 1.5s infinite;
+  /* ── Animations ─────────────────────── */
+  --animate-fade-in: fade-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-up: slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-down: slide-down 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-scale-in: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-scale-out: scale-out 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-shimmer: shimmer 2s infinite;
 }
 
 /* ═══════════════════════════════════════
-   Base Reset
+   Base Reset — Apple style
    ═══════════════════════════════════════ */
 * {
   margin: 0;
@@ -99,82 +87,104 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  -moz-tab-size: 4;
-  tab-size: 4;
+  text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   font-family: var(--font-sans);
-  background: var(--color-background);
-  color: var(--color-foreground);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  line-height: 1.5;
+  background: var(--color-apple-bg);
+  color: var(--color-apple-text);
+  line-height: 1.47059;
+  letter-spacing: -0.022em;
 }
 
 /* ═══════════════════════════════════════
-   Scrollbar
+   Scrollbar — Apple style (thin, subtle)
    ═══════════════════════════════════════ */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 980px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: rgba(0, 0, 0, 0.25);
 }
 
-/* Dark sidebar scrollbar */
 .sidebar-scroll::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: rgba(255, 255, 255, 0.15);
 }
 .sidebar-scroll::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* ═══════════════════════════════════════
-   Focus ring utility
-   ═══════════════════════════════════════ */
-.focus-ring:focus-visible {
-  outline: 2px solid var(--color-ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-md);
-}
-
-/* ═══════════════════════════════════════
-   Keyframes
+   Keyframes — Spring-like easing
    ═══════════════════════════════════════ */
 @keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+
 @keyframes slide-up {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(20px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
 @keyframes slide-down {
-  from { opacity: 0; transform: translateY(-8px); }
+  from { opacity: 0; transform: translateY(-12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.95); }
+  from { opacity: 0; transform: scale(0.94); }
   to   { opacity: 1; transform: scale(1); }
 }
+
+@keyframes scale-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.94); }
+}
+
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(52, 199, 89, 0); }
 }
 
 /* ═══════════════════════════════════════
    Selection
    ═══════════════════════════════════════ */
 ::selection {
-  background: var(--color-primary-100);
-  color: var(--color-primary-900);
+  background: rgba(0, 113, 227, 0.18);
+  color: var(--color-apple-text);
+}
+
+/* ═══════════════════════════════════════
+   Utility: Glass morphism
+   ═══════════════════════════════════════ */
+.glass {
+  background: var(--color-apple-glass);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* ═══════════════════════════════════════
+   Utility: Smooth focus ring
+   ═══════════════════════════════════════ */
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-input-focus);
+  border-color: var(--color-apple-blue);
 }
