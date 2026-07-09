@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+    container_name: lan-monitor-backend
     ports:
       - "8000:8000"
     volumes:
@@ -10,13 +11,23 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - lan-monitor
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+    container_name: lan-monitor-frontend
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_started
     restart: unless-stopped
+    networks:
+      - lan-monitor
+
+networks:
+  lan-monitor:
+    driver: bridge
