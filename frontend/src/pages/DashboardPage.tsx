@@ -1,156 +1,149 @@
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
-import { Shield, Wifi, Activity, Cpu, Brain, TrendingUp, AlertTriangle, Zap, Globe } from 'lucide-react'
-import StatCard from '../components/shared/StatCard'
-import AlertTimeline from '../components/dashboard/AlertTimeline'
-import TrafficChart from '../components/dashboard/TrafficChart'
-import TopTalkers from '../components/dashboard/TopTalkers'
-import DeviceMap from '../components/dashboard/DeviceMap'
+import { Shield, Wifi, Activity, Cpu, Brain, TrendingUp, TrendingDown, ArrowRight, AlertTriangle } from 'lucide-react'
 import { getDashboardSummary, getMikrotikStatus, getTrafficHistory, getTopTalkers, getActiveHosts } from '../api/client'
 import { useAlertStore } from '../stores/alertStore'
-import { formatBytes } from '../lib/utils'
-import type { DashboardStats, TrafficStat, Device } from '../types'
+import { cn, formatBytes, formatRelativeTime } from '../lib/utils'
+import type { DashboardStats, TrafficStat } from '../types'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+
+// ── StatCard ──
+function StatCard({ icon: I, label, value, sub, trend, delay }: {
+  icon: any; label: string; value: string | number; sub?: string;
+  trend?: 'up' | 'down'; delay?: number
+}) {
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <div className="p-2 rounded-lg bg-secondary"><I className="w-4 h-4 text-foreground" /></div>
+        {trend && (
+          <span className={cn('flex items-center gap-0.5 text-xs font-medium rounded-full px-2 py-0.5',
+            trend === 'up' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
+            {trend === 'up' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+          </span>
+        )}
+      </div>
+      <p className="text-2xl font-bold tracking-tight">{value}</p>
+      <p className="text-sm text-muted-foreground mt-1">{label}</p>
+      {sub && <p className="text-xs text-muted-foreground/60 mt-0.5">{sub}</p>}
+    </div>
+  )
+}
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [traffic, setTraffic] = useState<TrafficStat[]>([])
   const [router, setRouter] = useState<Record<string, any>>({})
   const [talkers, setTalkers] = useState<any[]>([])
-  const [devices, setDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
-  const recentAlerts = useAlertStore((s) => s.recentAlerts)
+  const recentAlerts = useAlertStore((s) => s.recentAlerts.slice(0, 10))
 
   useEffect(() => {
     (async () => {
       try {
-        const [dash, t, r, top, hosts] = await Promise.allSettled([
+        const [d, t, r, top] = await Promise.allSettled([
           getDashboardSummary(), getTrafficHistory(120),
-          getMikrotikStatus().catch(() => ({})),
-          getTopTalkers(10).catch(() => []), getActiveHosts().catch(() => []),
+          getMikrotikStatus().catch(() => ({})), getTopTalkers(10).catch(() => []),
         ])
-        if (dash.status === 'fulfilled' && dash.value?.stats) setStats(dash.value.stats)
+        if (d.status === 'fulfilled' && d.value?.stats) setStats(d.value.stats)
         if (t.status === 'fulfilled') setTraffic(t.value || [])
         if (r.status === 'fulfilled') setRouter(r.value)
         if (top.status === 'fulfilled') setTalkers(top.value || [])
-        if (hosts.status === 'fulfilled') {
-          setDevices((hosts.value || []).map((h: any, i: number) => ({
-            id: i, ip_address: h.ip || h.address || '?', mac_address: h.mac || null,
-            hostname: h.name || null, vendor: null, device_type: 'unknown',
-            first_seen: '', last_seen: '', is_online: true,
-          })))
-        }
       } catch {} finally { setLoading(false) }
     })()
-    const t = setInterval(() => {
-      getDashboardSummary().then(d => d?.stats && setStats(d.stats)).catch(() => {})
-    }, 15000)
-    return () => clearInterval(t)
   }, [])
 
   const latest = traffic[traffic.length - 1]
   const prev = traffic[traffic.length - 2]
   const trend = latest && prev ? ((latest.bytes_in + latest.bytes_out) > (prev.bytes_in + prev.bytes_out) ? 'up' : 'down') : undefined
+  const chartData = traffic.slice(-60).map(t => ({ time: t.time?.slice(11, 16) || '', in: t.bytes_in, out: t.bytes_out }))
 
   return (
-    <div className="space-y-8 pb-20 lg:pb-0">
-      {/* Hero */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Dashboard</h2>
-          <p className="text-slate-500 mt-1.5 text-sm">Real-time network overview</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-2xl border border-slate-100 shadow-sm">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-glow" />
-            <span className="text-xs font-semibold text-slate-600">Live Monitoring</span>
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-2xl border border-slate-100 shadow-sm">
-            <Zap className="w-4 h-4 text-amber-500" />
-            <span className="text-xs font-semibold text-slate-600">{recentAlerts.length} alerts today</span>
-          </div>
-        </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
+        <p className="text-sm text-muted-foreground mt-1">Real-time network monitoring overview</p>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-        {loading ? (
-          Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="bg-white rounded-3xl border border-slate-100 p-5 h-[144px] animate-shimmer" />
-          ))
-        ) : (
-          <>
-            <StatCard icon={Shield} label="Total Alerts" value={(stats?.total_alerts ?? 0).toLocaleString()}
-              sub={`${stats?.critical_alerts ?? 0} critical`} color="rose" delay={0} />
-            <StatCard icon={Wifi} label="Online Devices"
-              value={`${stats?.online_devices ?? 0}/${stats?.total_devices ?? 0}`} color="emerald" delay={1} />
-            <StatCard icon={Activity} label="Bandwidth"
-              value={latest ? formatBytes((latest.bytes_in + latest.bytes_out) || 0) + '/s' : '...'}
-              color="brand" trend={trend} delay={2} />
-            <StatCard icon={Cpu} label="Router CPU"
-              value={router?.['cpu-load'] ? `${router['cpu-load']}%` : '...'}
-              sub={router?.uptime || undefined} color="amber" delay={3} />
-            <StatCard icon={Brain} label="AI Blocks" value={(stats?.total_blocks ?? 0).toLocaleString()}
-              color="violet" delay={4} />
-          </>
-        )}
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {loading ? Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="bg-card border border-border rounded-xl p-5 shadow-sm h-[120px] animate-pulse"><div className="bg-secondary h-full rounded-lg" /></div>
+        )) : <>
+          <StatCard icon={Shield} label="Total Alerts" value={(stats?.total_alerts ?? 0).toLocaleString()} sub={`${stats?.critical_alerts ?? 0} critical`} delay={0} />
+          <StatCard icon={Wifi} label="Online Devices" value={`${stats?.online_devices ?? 0}/${stats?.total_devices ?? 0}`} delay={0} />
+          <StatCard icon={Activity} label="Bandwidth" value={latest ? formatBytes((latest.bytes_in + latest.bytes_out) || 0) + '/s' : '...'} trend={trend} delay={0} />
+          <StatCard icon={Cpu} label="Router CPU" value={router?.['cpu-load'] ? `${router['cpu-load']}%` : '...'} sub={router?.uptime} delay={0} />
+          <StatCard icon={Brain} label="AI Blocks" value={(stats?.total_blocks ?? 0).toLocaleString()} delay={0} />
+        </>}
       </div>
 
-      {/* Main content */}
+      {/* Chart & Alerts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Traffic chart — 2/3 width */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 rounded-xl bg-brand-50 text-brand-600"><TrendingUp className="w-5 h-5" /></div>
-            <div>
-              <h3 className="font-semibold text-slate-900">Network Traffic</h3>
-              <p className="text-xs text-slate-400">Real-time bandwidth monitoring</p>
-            </div>
-          </div>
-          {loading ? <div className="h-[260px] animate-shimmer rounded-2xl" /> : <TrafficChart data={traffic} height={260} />}
-        </motion.div>
+        <div className="lg:col-span-2 bg-card border border-border rounded-xl shadow-sm p-6">
+          <h3 className="font-semibold mb-4">Network Traffic</h3>
+          {loading ? <div className="h-[220px] bg-secondary rounded-lg animate-pulse" /> : (
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="inG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#18181b" stopOpacity={0.15} /><stop offset="95%" stopColor="#18181b" stopOpacity={0} /></linearGradient>
+                  <linearGradient id="outG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#71717a" stopOpacity={0.1} /><stop offset="95%" stopColor="#71717a" stopOpacity={0} /></linearGradient>
+                </defs>
+                <XAxis dataKey="time" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatBytes} width={60} />
+                <Tooltip formatter={(v: number) => formatBytes(v)} />
+                <Area type="monotone" dataKey="in" stroke="#18181b" fill="url(#inG)" strokeWidth={2} name="Inbound" />
+                <Area type="monotone" dataKey="out" stroke="#71717a" fill="url(#outG)" strokeWidth={2} name="Outbound" />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
 
-        {/* Recent alerts */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-          className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 rounded-xl bg-rose-50 text-rose-600"><AlertTriangle className="w-5 h-5" /></div>
-            <div>
-              <h3 className="font-semibold text-slate-900">Live Alerts</h3>
-              <p className="text-xs text-slate-400">Latest Suricata events</p>
-            </div>
+        <div className="bg-card border border-border rounded-xl shadow-sm p-6">
+          <h3 className="font-semibold mb-4">Recent Alerts</h3>
+          <div className="space-y-1">
+            {recentAlerts.length === 0 && <p className="text-sm text-muted-foreground py-8 text-center">No alerts yet</p>}
+            {recentAlerts.map((a, i) => (
+              <div key={a.id || i} className="flex items-start gap-2 py-2 text-sm">
+                <span className={cn('w-1.5 h-1.5 rounded-full mt-1.5 shrink-0', a.alert_severity <= 2 ? 'bg-destructive' : 'bg-yellow-500')} />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium truncate">{a.alert_signature || a.src_ip}</p>
+                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <span className="font-mono">{a.src_ip}</span>
+                    <ArrowRight className="w-2.5 h-2.5" />
+                    <span className="font-mono">{a.dest_ip}</span>
+                    <span className="ml-auto">{formatRelativeTime(a.timestamp)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          <AlertTimeline alerts={recentAlerts} maxHeight="340px" />
-        </motion.div>
+        </div>
       </div>
 
-      {/* Bottom row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-          className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 rounded-xl bg-cyan-50 text-cyan-600"><Globe className="w-5 h-5" /></div>
-            <div>
-              <h3 className="font-semibold text-slate-900">Top Talkers</h3>
-              <p className="text-xs text-slate-400">Highest bandwidth consumers</p>
-            </div>
+      {/* Top Talkers */}
+      <div className="bg-card border border-border rounded-xl shadow-sm p-6">
+        <h3 className="font-semibold mb-4">Top Talkers</h3>
+        {loading ? <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 bg-secondary rounded-lg animate-pulse" />)}</div> : (
+          <div className="space-y-2">
+            {talkers.slice(0, 8).map((t, i) => {
+              const sent = t.bytes_sent || t.sent || 0
+              const rcvd = t.bytes_rcvd || t.rcvd || 0
+              const total = sent + rcvd
+              const max = Math.max(...talkers.slice(0, 8).map((x: any) => (x.bytes_sent || x.sent || 0) + (x.bytes_rcvd || x.rcvd || 0)), 1)
+              return (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground w-5">{i + 1}</span>
+                  <span className="text-sm font-mono font-medium flex-1 truncate">{t.ip || t.address || 'Unknown'}</span>
+                  <div className="w-32 h-2 bg-secondary rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${Math.max((total / max) * 100, 2)}%` }} />
+                  </div>
+                  <span className="text-xs text-muted-foreground w-20 text-right">{formatBytes(total)}</span>
+                </div>
+              )
+            })}
           </div>
-          {loading ? <div className="space-y-3">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-8 animate-shimmer rounded-lg" />)}</div>
-            : <TopTalkers talkers={talkers} limit={8} />}
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
-          className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 rounded-xl bg-violet-50 text-violet-600"><Wifi className="w-5 h-5" /></div>
-            <div>
-              <h3 className="font-semibold text-slate-900">Network Devices</h3>
-              <p className="text-xs text-slate-400">Discovered LAN devices</p>
-            </div>
-          </div>
-          {loading ? <div className="grid grid-cols-3 gap-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-24 animate-shimmer rounded-2xl" />)}</div>
-            : <DeviceMap devices={devices} />}
-        </motion.div>
+        )}
       </div>
     </div>
   )
