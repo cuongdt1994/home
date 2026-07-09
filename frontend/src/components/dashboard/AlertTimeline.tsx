@@ -1,33 +1,25 @@
-import { AlertTriangle, Shield, TrendingUp } from 'lucide-react'
+import { AlertTriangle, ArrowRight } from 'lucide-react'
 import type { Alert } from '../../types'
-import { severityColor, formatRelativeTime } from '../../lib/utils'
+import { formatRelativeTime, severityColor } from '../../lib/utils'
 
-interface Props {
-  alerts: Alert[]
-  maxHeight?: string
-}
+interface Props { alerts: Alert[]; maxHeight?: string }
 
 export default function AlertTimeline({ alerts, maxHeight = '300px' }: Props) {
   return (
     <div className="space-y-2 overflow-y-auto" style={{ maxHeight }}>
-      {alerts.length === 0 && (
-        <p className="text-sm text-surface-400 text-center py-4">No alerts yet</p>
-      )}
-      {alerts.slice(0, 20).map((alert) => (
-        <div
-          key={alert.id}
-          className="flex items-start gap-2.5 p-2.5 rounded-xl bg-surface-50 hover:bg-surface-100 transition-colors cursor-pointer border border-surface-100"
-        >
-          <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold border ${severityColor(alert.alert_severity)}`}>
-            S{alert.alert_severity}
-          </span>
+      {alerts.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Waiting for alerts...</p>}
+      {alerts.slice(0, 15).map((alert, i) => (
+        <div key={alert.id || i}
+          className="group flex items-start gap-3 p-3 rounded-2xl hover:bg-slate-50 transition-all cursor-pointer border border-transparent hover:border-slate-100">
+          <div className={`shrink-0 w-2 h-2 rounded-full mt-2 ${alert.alert_severity <= 2 ? 'bg-rose-500 animate-pulse-glow' : 'bg-amber-400'}`} />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-surface-800 truncate">
-              {alert.alert_signature || 'Unknown signature'}
-            </p>
-            <p className="text-[11px] text-surface-400 mt-0.5">
-              {alert.src_ip} → {alert.dest_ip} · {formatRelativeTime(alert.timestamp)}
-            </p>
+            <p className="text-xs font-semibold text-slate-800 truncate">{alert.alert_signature || 'Unknown'}</p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[11px] font-mono text-slate-500">{alert.src_ip}</span>
+              <ArrowRight className="w-3 h-3 text-slate-300" />
+              <span className="text-[11px] font-mono text-slate-500">{alert.dest_ip}</span>
+              <span className="text-[10px] text-slate-400 ml-auto">{formatRelativeTime(alert.timestamp)}</span>
+            </div>
           </div>
         </div>
       ))}

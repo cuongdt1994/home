@@ -20,7 +20,7 @@ services:
       dockerfile: Dockerfile.frontend
     container_name: lan-monitor-frontend
     ports:
-      - "5137:80"
+      - "5173:80"
     depends_on:
       backend:
         condition: service_started
