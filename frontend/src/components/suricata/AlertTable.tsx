@@ -9,7 +9,7 @@ interface Props {
   loading?: boolean
 }
 
-type SortField = 'timestamp' | 'severity' | 'src_ip' | 'alert_signature'
+type SortField = 'timestamp' | 'alert_severity' | 'src_ip' | 'alert_signature'
 
 export default function AlertTable({ alerts, onSelectAlert, loading }: Props) {
   const [sortField, setSortField] = useState<SortField>('timestamp')
@@ -39,7 +39,7 @@ export default function AlertTable({ alerts, onSelectAlert, loading }: Props) {
 
   const headers: { key: SortField; label: string }[] = [
     { key: 'timestamp', label: 'Time' },
-    { key: 'severity', label: 'Severity' },
+    { key: 'alert_severity', label: 'Severity' },
     { key: 'alert_signature', label: 'Signature' },
     { key: 'src_ip', label: 'Source' },
   ]
