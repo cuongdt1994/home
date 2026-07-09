@@ -1,31 +1,44 @@
-"""Suricata IDS/IPS integration - tail eve.json via SSH."""
+"""Suricata IDS/IPS integration - tail eve.json from local filesystem."""
 
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime
 
 from database import Alert, get_session
-from services.ssh_client import get_suricata_client
+from config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class SuricataService:
-    """Tail suricata eve.json via SSH and broadcast alerts."""
+    """Tail suricata eve.json locally and broadcast alerts."""
 
     def __init__(self):
         self._running = False
         self._offset = 0
         self._ws_manager = None
+        self._eve_path = settings.suricata_eve_path
 
     def set_ws_manager(self, manager):
         self._ws_manager = manager
 
     async def get_recent_alerts(self, limit: int = 100) -> list[dict]:
-        """Fetch recent alerts from remote via SSH."""
-        client = get_suricata_client()
-        raw = await client.execute(f"tail -n {limit} /var/log/suricata/eve.json 2>/dev/null || echo '[]'")
+        """Fetch recent alerts from local eve.json."""
+        try:
+            with open(self._eve_path, "r") as f:
+                # Seek to end minus ~10KB per alert, then tail manually
+                f.seek(0, os.SEEK_END)
+                f_size = f.tell()
+                # Read approximately enough to get `limit` lines
+                read_size = min(f_size, max(limit * 2048, 64 * 1024))
+                f.seek(max(0, f_size - read_size))
+                raw = f.read()
+        except (FileNotFoundError, PermissionError) as e:
+            logger.error("Cannot read %s: %s", self._eve_path, e)
+            return []
+
         alerts = []
         for line in raw.strip().split("\n"):
             try:
@@ -65,19 +78,28 @@ class SuricataService:
     async def run_watcher(self):
         """Background task: tail eve.json and process new alerts."""
         self._running = True
-        client = get_suricata_client()
+
+        # Check file accessibility first
+        if not os.path.isfile(self._eve_path):
+            logger.error("eve.json not found at %s — watcher disabled", self._eve_path)
+            return
+        if not os.access(self._eve_path, os.R_OK):
+            logger.error("Cannot read %s (permission denied) — watcher disabled", self._eve_path)
+            return
 
         # Start from end of file
-        size = await client.get_file_size("/var/log/suricata/eve.json")
-        self._offset = size
-        logger.info(f"Suricata watcher started at offset {self._offset}")
+        try:
+            self._offset = os.path.getsize(self._eve_path)
+        except OSError as e:
+            logger.error("Cannot stat %s: %s — watcher disabled", self._eve_path, e)
+            return
+
+        logger.info("Suricata watcher started on %s at offset %d", self._eve_path, self._offset)
 
         consecutive_errors = 0
         while self._running:
             try:
-                content, new_size = await client.read_file_offset(
-                    "/var/log/suricata/eve.json", self._offset
-                )
+                content, new_size = self._read_file_offset(self._eve_path, self._offset)
                 if new_size > self._offset:
                     self._offset = new_size
                     consecutive_errors = 0
@@ -91,12 +113,31 @@ class SuricataService:
                 await asyncio.sleep(1)
             except Exception as e:
                 consecutive_errors += 1
-                logger.error(f"Suricata watcher error (#{consecutive_errors}): {e}")
+                logger.error("Suricata watcher error (#%d): %s", consecutive_errors, e)
                 if consecutive_errors > 10:
                     logger.warning("Too many errors, waiting 30s...")
                     await asyncio.sleep(30)
                     consecutive_errors = 0
                 await asyncio.sleep(2)
+
+    def _read_file_offset(self, path: str, offset: int) -> tuple[str, int]:
+        """Read file from offset, return (content, new_size). Local version (no SSH)."""
+        try:
+            new_size = os.path.getsize(path)
+        except OSError:
+            return "", offset
+
+        if new_size <= offset:
+            return "", offset
+
+        try:
+            with open(path, "r") as f:
+                f.seek(offset)
+                content = f.read()
+        except OSError:
+            return "", offset
+
+        return content, new_size
 
     async def _process_line(self, line: str):
         """Parse a single eve.json line, persist, and broadcast."""
@@ -122,7 +163,7 @@ class SuricataService:
             parsed["id"] = alert.id
         except Exception as e:
             session.rollback()
-            logger.error(f"Failed to save alert: {e}")
+            logger.error("Failed to save alert: %s", e)
             return
         finally:
             session.close()

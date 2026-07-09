@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
 
 import asyncssh
 
@@ -11,17 +10,23 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 
+class PermissionDeniedError(Exception):
+    """Raised when the remote command fails due to file permission issues."""
+
+
 class SSHClient:
     """Async SSH client manager with auto-reconnect."""
 
-    def __init__(self, host: str, port: int, username: str, password: str, label: str = ""):
+    def __init__(self, host: str, port: int, username: str, password: str, label: str = "", use_sudo: bool = False):
         self.host = host
         self.port = port
         self.username = username
         self.password = password
         self.label = label or host
+        self.use_sudo = use_sudo
         self._conn: asyncssh.SSHClientConnection | None = None
         self._lock = asyncio.Lock()
+        self._perm_denied_logged: set[str] = set()  # paths we already warned about
 
     async def connect(self) -> asyncssh.SSHClientConnection:
         async with self._lock:
@@ -43,28 +48,53 @@ class SSHClient:
         conn = await self.connect()
         result = await asyncio.wait_for(conn.run(command), timeout=timeout)
         if result.exit_status != 0 and result.stderr:
-            logger.warning(f"SSH [{self.label}] command '{command[:60]}...' stderr: {result.stderr}")
+            stderr = result.stderr.strip()
+            # Deduplicate permission-denied warnings per path to avoid log spam
+            if self._is_perm_denied(stderr):
+                # Extract path from command for dedup key
+                if stderr not in self._perm_denied_logged:
+                    self._perm_denied_logged.add(stderr)
+                    logger.error(
+                        "SSH [%s] Permission denied for user '%s'. "
+                        "Grant read access on the remote file or enable use_sudo=True. "
+                        "Command: %s",
+                        self.label, self.username, command[:80]
+                    )
+            else:
+                logger.warning(f"SSH [{self.label}] command '{command[:60]}...' stderr: {stderr}")
         return result.stdout or ""
 
     async def tail_file(self, path: str) -> str:
         """Read new lines from a file (like tail -n)."""
-        return await self.execute(f"tail -n 500 '{path}'")
+        return await self.execute(self._sudo(f"tail -n 500 '{path}'"))
 
     async def tail_follow(self, path: str) -> str:
         """Get last line of file."""
-        return await self.execute(f"tail -n 1 '{path}'")
+        return await self.execute(self._sudo(f"tail -n 1 '{path}'"))
 
     async def file_exists(self, path: str) -> bool:
         """Check if a file exists on the remote."""
-        result = await self.execute(f"test -f '{path}' && echo YES || echo NO")
+        result = await self.execute(self._sudo(f"test -f '{path}' && echo YES || echo NO"))
         return "YES" in result
+
+    def _sudo(self, cmd: str) -> str:
+        """Prepend sudo if use_sudo is enabled."""
+        return f"sudo {cmd}" if self.use_sudo else cmd
+
+    def _is_perm_denied(self, stderr: str) -> bool:
+        """Check if stderr indicates a permission denied error."""
+        return stderr is not None and "permission denied" in stderr.lower()
 
     async def get_file_size(self, path: str) -> int:
         """Get remote file size in bytes."""
-        result = await self.execute(f"stat -c%s '{path}' 2>/dev/null || wc -c < '{path}'")
+        result = await self.execute(
+            self._sudo(f"stat -c%s '{path}' 2>/dev/null || wc -c < '{path}'")
+        )
         try:
             return int(result.strip())
         except ValueError:
+            if result:
+                logger.warning("get_file_size(%s): unexpected output: %r", path, result[:200])
             return 0
 
     async def read_file_offset(self, path: str, offset: int) -> tuple[str, int]:
@@ -72,7 +102,7 @@ class SSHClient:
         size = await self.get_file_size(path)
         if size <= offset:
             return "", offset
-        result = await self.execute(f"tail -c +{offset + 1} '{path}'")
+        result = await self.execute(self._sudo(f"tail -c +{offset + 1} '{path}'"))
         return result, size
 
     async def close(self):
@@ -84,21 +114,7 @@ class SSHClient:
 
 # ── Global client factories ─────────────────────────────
 
-_suricata_client: SSHClient | None = None
 _mikrotik_client: SSHClient | None = None
-
-
-def get_suricata_client() -> SSHClient:
-    global _suricata_client
-    if _suricata_client is None:
-        _suricata_client = SSHClient(
-            host=settings.suricata_server_host,
-            port=settings.suricata_server_port,
-            username=settings.suricata_server_user,
-            password=settings.suricata_server_pass,
-            label="suricata-ntopng",
-        )
-    return _suricata_client
 
 
 def get_mikrotik_client() -> SSHClient:

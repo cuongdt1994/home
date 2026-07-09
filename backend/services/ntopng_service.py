@@ -1,4 +1,4 @@
-"""ntopng REST API client accessed via SSH tunnel."""
+"""ntopng REST API client — direct localhost access (no SSH tunnel needed)."""
 
 import asyncio
 import logging
@@ -7,97 +7,77 @@ from datetime import datetime
 import httpx
 
 from database import HostTrafficStat, TrafficStat, get_session
-from services.ssh_client import get_suricata_client
 
 logger = logging.getLogger(__name__)
 
 
 class NtopngService:
-    """Access ntopng REST API through SSH port-forward tunnel."""
+    """Access ntopng REST API directly on localhost."""
 
     def __init__(self):
         self._client: httpx.AsyncClient | None = None
-        self._tunnel_task: asyncio.Task | None = None
-        self._local_port = 13000  # Local port for SSH tunnel
         self._running = False
         self._ws_manager = None
 
     def set_ws_manager(self, manager):
         self._ws_manager = manager
 
-    async def _ensure_tunnel(self):
-        """Create SSH local port forward to ntopng on remote server."""
+    async def _ensure_client(self):
+        """Create httpx client for direct ntopng API access."""
         if self._client is not None:
             return
 
-        ssh = get_suricata_client()
-        conn = await ssh.connect()
-
-        # Port forward: local 13000 -> remote localhost:3000 (ntopng)
-        try:
-            listener = await conn.forward_local_port(
-                '', self._local_port, '127.0.0.1', 3000
-            )
-            logger.info(f"SSH tunnel established: localhost:{self._local_port} -> ntopng:3000")
-        except Exception as e:
-            logger.warning(f"Port forward may already exist: {e}")
+        from config import settings
 
         self._client = httpx.AsyncClient(
-            base_url=f"http://127.0.0.1:{self._local_port}",
-            auth=(self._get_ntopng_user(), self._get_ntopng_pass()),
+            base_url=f"http://127.0.0.1:{settings.ntopng_local_port}",
+            auth=(settings.ntopng_user, settings.ntopng_pass),
             timeout=15.0,
         )
-
-    def _get_ntopng_user(self) -> str:
-        from config import settings
-        return settings.ntopng_user
-
-    def _get_ntopng_pass(self) -> str:
-        from config import settings
-        return settings.ntopng_pass
+        logger.info("ntopng client initialized on localhost:%s", settings.ntopng_local_port)
 
     async def get_interface_data(self) -> dict:
         """Get main interface statistics."""
-        await self._ensure_tunnel()
+        await self._ensure_client()
         try:
             resp = await self._client.get("/lua/rest/v2/get/interface/data.lua")
             resp.raise_for_status()
             data = resp.json()
             if data.get("rc") != 0:
-                logger.warning(f"ntopng API error: {data.get('rc_str', 'unknown')}")
+                logger.warning("ntopng API error: %s", data.get("rc_str", "unknown"))
                 return {}
             return data.get("rsp", {})
         except Exception as e:
-            logger.error(f"ntopng interface data error: {e}")
+            logger.error("ntopng interface data error: %s", e)
             return {}
 
     async def get_active_hosts(self) -> list[dict]:
         """Get list of active hosts."""
-        await self._ensure_tunnel()
+        await self._ensure_client()
         try:
             resp = await self._client.get("/lua/rest/v2/get/host/active.lua")
             resp.raise_for_status()
             data = resp.json()
             return data.get("rsp", [])
         except Exception as e:
-            logger.error(f"ntopng active hosts error: {e}")
+            logger.error("ntopng active hosts error: %s", e)
             return []
 
     async def get_host_data(self, host_ip: str) -> dict:
         """Get per-host traffic statistics."""
-        await self._ensure_tunnel()
+        await self._ensure_client()
         try:
             resp = await self._client.get(f"/lua/rest/v2/get/host/data.lua?host={host_ip}")
             resp.raise_for_status()
             data = resp.json()
             return data.get("rsp", {})
         except Exception as e:
-            logger.error(f"ntopng host data error for {host_ip}: {e}")
+            logger.error("ntopng host data error for %s: %s", host_ip, e)
             return {}
 
     async def get_top_talkers(self, limit: int = 10) -> list[dict]:
         """Get top talkers sorted by traffic."""
-        await self._ensure_tunnel()
+        await self._ensure_client()
         try:
             resp = await self._client.get("/lua/rest/v2/get/host/top/talkers.lua")
             resp.raise_for_status()
@@ -105,12 +85,12 @@ class NtopngService:
             hosts = data.get("rsp", [])
             return hosts[:limit] if isinstance(hosts, list) else []
         except Exception as e:
-            logger.error(f"ntopng top talkers error: {e}")
+            logger.error("ntopng top talkers error: %s", e)
             return []
 
     async def poll_and_store(self):
         """Poll ntopng API and store traffic stats."""
-        await self._ensure_tunnel()
+        await self._ensure_client()
         try:
             iface = await self.get_interface_data()
 
@@ -129,7 +109,7 @@ class NtopngService:
                 session.commit()
             except Exception as e:
                 session.rollback()
-                logger.error(f"Failed to store traffic stat: {e}")
+                logger.error("Failed to store traffic stat: %s", e)
             finally:
                 session.close()
 
@@ -144,7 +124,7 @@ class NtopngService:
                 })
 
         except Exception as e:
-            logger.error(f"ntopng poll error: {e}")
+            logger.error("ntopng poll error: %s", e)
 
     async def run_poller(self):
         """Background task: poll ntopng periodically."""
@@ -156,7 +136,7 @@ class NtopngService:
             try:
                 await self.poll_and_store()
             except Exception as e:
-                logger.error(f"ntopng poller error: {e}")
+                logger.error("ntopng poller error: %s", e)
             await asyncio.sleep(settings.ntopng_poll_interval)
 
     async def close(self):

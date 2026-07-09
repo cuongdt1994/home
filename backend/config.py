@@ -26,7 +26,7 @@ class Settings:
     suricata_server_pass: str = "1"
     suricata_eve_path: str = "/var/log/suricata/eve.json"
 
-    # ntopng (accessed via SSH tunnel to suricata server)
+    # ntopng (accessed directly on localhost)
     ntopng_local_port: int = 3000
     ntopng_user: str = "admin"
     ntopng_pass: str = "Cuongdt@94"
