@@ -1,0 +1,43 @@
+"Act as a Lead Frontend Engineer. I need to build a comprehensive, high-end dashboard interface for my 'LAN Monitor' application using Vite, React, and Tailwind CSS.
+
+The current UI is outdated. I need a robust, scalable layout that will serve as the foundation for the entire application (not just the 2FA page).
+
+Please deliver a modular structure including:
+
+Global Layout (The 'Shell'): * Implement a persistent Sidebar (with navigation links like Dashboard, Network, Settings, etc.) and a clean Topbar (user profile, status indicators).
+
+Use a 'Mobile-First' approach with a responsive drawer for the sidebar on mobile.
+
+Design System & Style:
+
+Set up a modern 'SaaS' theme: clean, functional, high contrast for readability, and professional spacing.
+
+Define a consistent look for Cards, Buttons, Inputs, and Tables (the building blocks for all other pages).
+
+Use a sophisticated color palette (Slate/Zinc for neutrals, and a sharp Primary color for actions).
+
+Component Requirements:
+
+Dashboard Shell: Include a 'Main Content' wrapper that provides padding and proper layout flow.
+
+2FA Page (As a specific module): Rebuild the 2FA verification page within this new shell, using the standardized components.
+
+Modern Inputs: Standardized form fields for better UX (hover effects, focus rings, error state visuals).
+
+Code Architecture:
+
+Separate concerns: Please structure the code into components (Sidebar.jsx, Topbar.jsx, Layout.jsx, AuthPage.jsx).
+
+Use lucide-react for all iconography.
+
+Ensure the code is clean, production-ready, and easy to extend for future features (e.g., adding charts, monitoring logs).
+
+Focus on:
+
+Visual Hierarchy: Use typography (font-size, weight) to establish clear sections.
+
+Performance: Code must be lightweight, utilizing Vite's speed.
+
+Scalability: Show me how to maintain the UI consistency across different modules of the app.
+
+Please provide the structure and the primary code snippets to get this design system off the ground immediately."
