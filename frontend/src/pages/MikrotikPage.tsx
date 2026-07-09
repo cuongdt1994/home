@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react'
-import { ShieldBan, Router } from 'lucide-react'
-import ResourceGauge from '../components/mikrotik/ResourceGauge'
-import InterfaceList from '../components/mikrotik/InterfaceList'
-import FirewallRules from '../components/mikrotik/FirewallRules'
-import { getMikrotikStatus, getInterfaces, getFirewallRules, blockIp, toggleFirewallRule, deleteFirewallRule, getArpTable } from '../api/client'
+import { ShieldBan, EthernetPort, Wifi as WifiIcon } from 'lucide-react'
+import { getMikrotikStatus, getInterfaces, getFirewallRules, blockIp as apiBlock, toggleFirewallRule, deleteFirewallRule, getArpTable } from '../api/client'
+import { cn, formatBytes } from '../lib/utils'
 
 export default function MikrotikPage() {
   const [status, setStatus] = useState<Record<string, any>>({})
   const [interfaces, setInterfaces] = useState<any[]>([])
   const [rules, setRules] = useState<any[]>([])
   const [arp, setArp] = useState<any[]>([])
-  const [blockIpInput, setBlockIpInput] = useState('')
-  const [blockComment, setBlockComment] = useState('')
+  const [ip, setIp] = useState('')
+  const [comment, setComment] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -27,90 +25,104 @@ export default function MikrotikPage() {
         if (a.status === 'fulfilled') setArp(a.value || [])
       } catch {} finally { setLoading(false) }
     })()
-    const t = setInterval(() => { getMikrotikStatus().then(setStatus).catch(() => {}) }, 20000)
-    return () => clearInterval(t)
   }, [])
 
-  const handleBlock = async () => {
-    if (!blockIpInput) return
-    try {
-      await blockIp(blockIpInput, blockComment || 'Manual block')
-      setBlockIpInput(''); setBlockComment('')
-      setRules((await getFirewallRules().catch(() => [])) || [])
-    } catch {}
-  }
-
-  const handleToggle = async (ruleId: string, disabled: boolean) => {
-    try {
-      await toggleFirewallRule(ruleId, disabled)
-      setRules(prev => prev.map(r => (r['.id'] === ruleId || r.id === ruleId) ? { ...r, disabled: disabled ? 'true' : 'false' } : r))
-    } catch {}
-  }
-
-  const handleDelete = async (ruleId: string) => {
-    if (!confirm('Delete this rule?')) return
-    try { await deleteFirewallRule(ruleId); setRules(prev => prev.filter(r => r['.id'] !== ruleId && r.id !== ruleId)) } catch {}
-  }
+  const doBlock = async () => { if (!ip) return; await apiBlock(ip, comment || 'Manual'); setIp(''); setComment(''); setRules(await getFirewallRules().catch(() => []) || []) }
 
   return (
-    <div className="space-y-8 pb-20 lg:pb-0">
-      <div>
-        <h2 className="text-3xl font-bold text-slate-900 tracking-tight">MikroTik Router</h2>
-        <p className="text-slate-500 text-sm mt-1">10.100.101.1 · RouterOS {status.version || ''}</p>
+    <div className="space-y-6">
+      <div><h2 className="text-2xl font-bold tracking-tight">MikroTik Router</h2><p className="text-sm text-muted-foreground mt-1">10.100.101.1</p></div>
+
+      {/* Resources */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { l: 'CPU Load', v: status['cpu-load'] ? `${status['cpu-load']}%` : 'N/A' },
+          { l: 'Free Memory', v: status['free-memory'] ? formatBytes(Number(status['free-memory'])) : 'N/A' },
+          { l: 'Total Memory', v: status['total-memory'] ? formatBytes(Number(status['total-memory'])) : 'N/A' },
+          { l: 'Uptime', v: status.uptime || 'N/A' },
+        ].map((s, i) => (
+          <div key={i} className="bg-card border border-border rounded-xl p-4 shadow-sm">
+            <p className="text-2xl font-bold">{s.v}</p>
+            <p className="text-sm text-muted-foreground mt-1">{s.l}</p>
+          </div>
+        ))}
       </div>
 
-      {loading ? <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{[...Array(4)].map((_, i) => <div key={i} className="bg-white rounded-3xl border border-slate-100 p-5 h-[120px] animate-shimmer" />)}</div>
-        : <ResourceGauge resources={status} />}
-
-      <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-xl bg-brand-50 text-brand-600"><Router className="w-5 h-5" /></div>
-          <div><h3 className="font-semibold text-slate-900">Interfaces</h3><p className="text-xs text-slate-400">Network interfaces</p></div>
-        </div>
-        {loading ? <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="h-20 animate-shimmer rounded-2xl" />)}</div>
-          : <InterfaceList interfaces={interfaces} />}
-      </div>
-
-      <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="p-2 rounded-xl bg-rose-50 text-rose-600"><ShieldBan className="w-5 h-5" /></div>
-          <div><h3 className="font-semibold text-slate-900">Quick Block IP</h3><p className="text-xs text-slate-400">Add firewall drop rule instantly</p></div>
-        </div>
+      {/* Quick Block */}
+      <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
+        <h3 className="font-semibold mb-3">Quick Block IP</h3>
         <div className="flex gap-3 flex-wrap">
-          <input type="text" placeholder="IP to block..." value={blockIpInput}
-            onChange={(e) => setBlockIpInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleBlock()}
-            className="flex-1 min-w-[160px] px-5 py-3 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300" />
-          <input type="text" placeholder="Comment..." value={blockComment}
-            onChange={(e) => setBlockComment(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleBlock()}
-            className="flex-1 min-w-[160px] px-5 py-3 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20" />
-          <button onClick={handleBlock}
-            className="px-8 py-3 bg-rose-500 text-white rounded-2xl text-sm font-semibold hover:bg-rose-600 transition-all shadow-lg shadow-rose-500/20">
-            Block IP
+          <input placeholder="IP address..." value={ip} onChange={e => setIp(e.target.value)} onKeyDown={e => e.key === 'Enter' && doBlock()}
+            className="flex-1 min-w-[160px] h-9 px-3 rounded-lg border border-input bg-transparent text-sm outline-none focus:ring-2 focus:ring-ring" />
+          <input placeholder="Comment..." value={comment} onChange={e => setComment(e.target.value)} onKeyDown={e => e.key === 'Enter' && doBlock()}
+            className="flex-1 min-w-[160px] h-9 px-3 rounded-lg border border-input bg-transparent text-sm outline-none focus:ring-2 focus:ring-ring" />
+          <button onClick={doBlock}
+            className="h-9 px-6 rounded-lg bg-destructive text-destructive-foreground text-sm font-medium hover:bg-destructive/90 flex items-center gap-2">
+            <ShieldBan className="w-4 h-4" /> Block
           </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-xl bg-amber-50 text-amber-600"><ShieldBan className="w-5 h-5" /></div>
-          <div><h3 className="font-semibold text-slate-900">Firewall Rules</h3><p className="text-xs text-slate-400">{rules.length} rules</p></div>
+      {/* Interfaces */}
+      <div className="bg-card border border-border rounded-xl shadow-sm p-6">
+        <h3 className="font-semibold mb-4">Interfaces</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {interfaces.map((iface: any, i: number) => (
+            <div key={i} className="flex items-center gap-4 p-4 rounded-xl border border-border">
+              <div className="p-2 rounded-lg bg-secondary">{iface.type && iface.type.toLowerCase().includes('wireless') ? <WifiIcon className="w-4 h-4" /> : <EthernetPort className="w-4 h-4" />}</div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm">{iface.name || iface.Name}</p>
+                <p className="text-xs text-muted-foreground font-mono">{iface['mac-address'] || iface.macAddress || '-'}</p>
+                <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
+                  <span>RX: {formatBytes(Number(iface['rx-byte'] || iface.rxByte || 0))}</span>
+                  <span>TX: {formatBytes(Number(iface['tx-byte'] || iface.txByte || 0))}</span>
+                </div>
+              </div>
+              <span className={cn('px-2 py-0.5 rounded text-[10px] font-bold', iface.running || iface.Running ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
+                {iface.running || iface.Running ? 'Up' : 'Down'}
+              </span>
+            </div>
+          ))}
         </div>
-        {loading ? <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="h-10 animate-shimmer rounded-lg" />)}</div>
-          : <FirewallRules rules={rules} onToggle={handleToggle} onDelete={handleDelete} />}
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-xl bg-violet-50 text-violet-600"><Router className="w-5 h-5" /></div>
-          <div><h3 className="font-semibold text-slate-900">ARP Table</h3><p className="text-xs text-slate-400">{arp.length} entries</p></div>
+      {/* Firewall rules */}
+      <div className="bg-card border border-border rounded-xl shadow-sm p-6">
+        <h3 className="font-semibold mb-4">Firewall Rules ({rules.length})</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-border bg-secondary/50">
+              <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase">#</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase">Chain</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase">Action</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase">Src</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase">Comment</th>
+            </tr></thead>
+            <tbody>
+              {rules.slice(0, 50).map((r: any, i: number) => (
+                <tr key={r['.id'] || r.id || i} className="border-b border-border">
+                  <td className="px-4 py-2 text-xs font-mono text-muted-foreground">{r['.id'] || r.id || i}</td>
+                  <td className="px-4 py-2 text-xs">{r.chain || r.Chain}</td>
+                  <td className="px-4 py-2"><span className={cn('px-2 py-0.5 rounded text-[10px] font-bold', (r.action || r.Action) === 'drop' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>{r.action || r.Action}</span></td>
+                  <td className="px-4 py-2 font-mono text-xs">{r['src-address'] || r.srcAddress || '*'}</td>
+                  <td className="px-4 py-2 text-xs text-muted-foreground max-w-[200px] truncate">{r.comment || r.Comment || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+      </div>
+
+      {/* ARP */}
+      <div className="bg-card border border-border rounded-xl shadow-sm p-6">
+        <h3 className="font-semibold mb-4">ARP Table ({arp.length})</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {arp.slice(0, 30).map((e: any, i: number) => (
-            <div key={i} className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 transition-all border border-slate-50">
-              <div className="w-2 h-2 rounded-full bg-emerald-400" />
-              <div>
-                <p className="font-mono text-sm font-semibold">{e.address || e.Address || e.ip || '-'}</p>
-                <p className="text-[10px] text-slate-400 font-mono">{e['mac-address'] || e.macAddress || e.mac || '-'}</p>
+            <div key={i} className="flex items-center gap-3 p-3 rounded-lg border border-border">
+              <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+              <div className="min-w-0">
+                <p className="font-mono text-sm font-medium">{e.address || e.Address || e.ip || '-'}</p>
+                <p className="text-[10px] text-muted-foreground font-mono">{e['mac-address'] || e.macAddress || e.mac || '-'}</p>
               </div>
             </div>
           ))}
