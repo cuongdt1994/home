@@ -1,0 +1,8 @@
+node_modules
+.git
+.env
+*.pyc
+__pycache__
+data
+.vite
+dist
