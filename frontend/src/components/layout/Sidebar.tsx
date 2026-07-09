@@ -2,10 +2,9 @@ import { useEffect, useRef } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
-  Shield,
   Activity,
-  Router,
-  Brain,
+  Shield,
+  Settings,
   ChevronLeft,
   Wifi,
   X,
@@ -14,10 +13,9 @@ import { cn } from '../../lib/utils'
 
 const NAV_ITEMS = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/suricata', icon: Shield,          label: 'Suricata' },
-  { to: '/ntopng',   icon: Activity,        label: 'Traffic' },
-  { to: '/mikrotik', icon: Router,          label: 'MikroTik' },
-  { to: '/ai',       icon: Brain,           label: 'AI Security' },
+  { to: '/suricata', icon: Activity,        label: 'Network Traffic' },
+  { to: '/ntopng',   icon: Shield,          label: 'Security Logs' },
+  { to: '/mikrotik', icon: Settings,        label: 'Settings' },
 ]
 
 interface SidebarProps {
@@ -31,9 +29,10 @@ export default function Sidebar({ open, mobileOpen, onToggle, onMobileClose }: S
   const loc = useLocation()
   const sidebarRef = useRef<HTMLElement>(null)
 
+  /* Close mobile on route change */
   useEffect(() => { onMobileClose() }, [loc.pathname])
 
-  /* Close mobile drawer on outside click */
+  /* Outside click → close mobile */
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (mobileOpen && sidebarRef.current && !sidebarRef.current.contains(e.target as Node)) {
@@ -44,7 +43,7 @@ export default function Sidebar({ open, mobileOpen, onToggle, onMobileClose }: S
     return () => document.removeEventListener('mousedown', handler)
   }, [mobileOpen, onMobileClose])
 
-  /* Lock scroll khi mobile open */
+  /* Lock body scroll when mobile open */
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
@@ -57,30 +56,28 @@ export default function Sidebar({ open, mobileOpen, onToggle, onMobileClose }: S
     <aside
       ref={sidebarRef}
       className={cn(
-        'h-full flex flex-col bg-sidebar-bg border-r border-sidebar-border',
-        'transition-all duration-400 ease-out',
-        open ? 'w-60' : 'w-[68px]',
+        'h-full flex flex-col bg-sidebar border-r border-sidebar-border',
+        'transition-all duration-300 ease-out',
+        open ? 'w-60' : 'w-[64px]',
       )}
     >
       {/* ── Logo ─────────────────────────── */}
-      <div
-        className={cn(
-          'flex items-center h-14 px-3 border-b border-sidebar-border shrink-0',
-          open ? 'gap-3' : 'justify-center',
-        )}
-      >
-        <div className="w-8 h-8 rounded-xl bg-apple-blue flex items-center justify-center shrink-0 shadow-lg shadow-apple-blue/25">
+      <div className={cn(
+        'flex items-center h-14 px-3 border-b border-sidebar-border shrink-0',
+        open ? 'gap-3' : 'justify-center',
+      )}>
+        <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shrink-0 shadow-md shadow-accent/25">
           <Wifi className="w-4 h-4 text-white" />
         </div>
         {open && (
-          <span className="font-semibold text-[15px] text-sidebar-text-hover tracking-tight whitespace-nowrap">
+          <span className="font-semibold text-sm text-sidebar-accent-foreground tracking-tight whitespace-nowrap">
             LAN Monitor
           </span>
         )}
       </div>
 
       {/* ── Navigation ───────────────────── */}
-      <nav className="flex-1 py-4 px-2.5 space-y-0.5 overflow-y-auto sidebar-scroll">
+      <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto sidebar-scroll">
         {NAV_ITEMS.map((item) => {
           const active = isActive(item.to)
           return (
@@ -88,11 +85,11 @@ export default function Sidebar({ open, mobileOpen, onToggle, onMobileClose }: S
               key={item.to}
               to={item.to}
               className={cn(
-                'flex items-center rounded-xl text-[14px] font-medium transition-all duration-200 ease-out',
+                'flex items-center rounded-lg text-sm font-medium transition-all duration-200',
                 open ? 'gap-3 px-3 py-2.5' : 'justify-center p-2.5',
                 active
-                  ? 'bg-apple-blue text-sidebar-text-active shadow-lg shadow-apple-blue/20'
-                  : 'text-sidebar-text hover:bg-sidebar-bg-hover hover:text-sidebar-text-hover',
+                  ? 'bg-accent text-white shadow-md shadow-accent/20'
+                  : 'text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-accent-foreground',
               )}
             >
               <item.icon className={cn('w-[18px] h-[18px] shrink-0')} />
@@ -102,19 +99,17 @@ export default function Sidebar({ open, mobileOpen, onToggle, onMobileClose }: S
         })}
       </nav>
 
-      {/* ── Collapse button ──────────────── */}
-      <div className="p-2.5 border-t border-sidebar-border shrink-0">
+      {/* ── Collapse toggle ──────────────── */}
+      <div className="p-2 border-t border-sidebar-border shrink-0">
         <button
           onClick={onToggle}
-          className="w-full flex items-center justify-center p-2 rounded-xl text-sidebar-text hover:bg-sidebar-bg-hover hover:text-sidebar-text-hover transition-all duration-200"
-          title={open ? 'Thu gọn' : 'Mở rộng'}
+          className="w-full flex items-center justify-center p-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-accent-foreground transition-colors"
+          title={open ? 'Collapse' : 'Expand'}
         >
-          <ChevronLeft
-            className={cn(
-              'w-[18px] h-[18px] transition-transform duration-400 ease-out',
-              !open && 'rotate-180',
-            )}
-          />
+          <ChevronLeft className={cn(
+            'w-[18px] h-[18px] transition-transform duration-300',
+            !open && 'rotate-180',
+          )} />
         </button>
       </div>
     </aside>
@@ -129,13 +124,13 @@ export default function Sidebar({ open, mobileOpen, onToggle, onMobileClose }: S
       {mobileOpen && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm md:hidden animate-fade-in"
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden animate-fade-in"
             onClick={onMobileClose}
           />
           <div className="fixed inset-y-0 left-0 z-50 w-64 md:hidden animate-slide-down">
             <button
               onClick={onMobileClose}
-              className="absolute top-3 right-3 z-10 p-1.5 rounded-full bg-sidebar-bg-hover text-sidebar-text hover:bg-white/15 hover:text-white transition-colors"
+              className="absolute top-3 right-3 z-10 p-1.5 rounded-lg bg-sidebar-hover text-sidebar-foreground hover:bg-zinc-700 hover:text-white transition-colors"
             >
               <X className="w-4 h-4" />
             </button>

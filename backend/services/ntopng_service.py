@@ -30,11 +30,11 @@ class NtopngService:
         from config import settings
 
         self._client = httpx.AsyncClient(
-            base_url=f"http://127.0.0.1:{settings.ntopng_local_port}",
+            base_url=f"http://{settings.ntopng_host}:{settings.ntopng_local_port}",
             auth=(settings.ntopng_user, settings.ntopng_pass),
             timeout=15.0,
         )
-        logger.info("ntopng client initialized on localhost:%s", settings.ntopng_local_port)
+        logger.info("ntopng client initialized on %s:%s", settings.ntopng_host, settings.ntopng_local_port)
 
     async def get_interface_data(self) -> dict:
         """Get main interface statistics."""

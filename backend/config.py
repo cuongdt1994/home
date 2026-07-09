@@ -26,7 +26,8 @@ class Settings:
     suricata_server_pass: str = "1"
     suricata_eve_path: str = "/var/log/suricata/eve.json"
 
-    # ntopng (accessed directly on localhost)
+    # ntopng (accessed directly on localhost, or host.docker.internal in Docker)
+    ntopng_host: str = "127.0.0.1"
     ntopng_local_port: int = 3000
     ntopng_user: str = "admin"
     ntopng_pass: str = "Cuongdt@94"

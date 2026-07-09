@@ -8,6 +8,7 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+      - /var/log/suricata:/var/log/suricata:ro
     env_file:
       - .env
     restart: unless-stopped
