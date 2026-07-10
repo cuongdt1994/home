@@ -1,7 +1,8 @@
-"""MikroTik Health Collector — comprehensive RouterOS data collection (Sections 1-12).
+"""MikroTik Health Collector — comprehensive RouterOS data collection.
 
-Uses the reusable RouterOS parser. Runs independent commands concurrently
-with a bounded thread pool. Supports partial results, caching, and stale markers.
+Runs commands sequentially over a single SSH connection for reliability.
+Tries as-value first, falls back to standard output if unsupported.
+Supports partial results and error diagnostics.
 """
 
 import asyncio
@@ -9,7 +10,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from app.config import settings
 from app.services.mikrotik import MikroTikExecutor
@@ -23,13 +24,9 @@ from app.services.routeros_parser import (
     parse_routeros_voltage,
     parse_routeros_percent,
     format_bytes,
-    format_bitrate,
 )
 
 logger = logging.getLogger(__name__)
-
-MAX_PARALLEL_COMMANDS = 5
-TOTAL_TIMEOUT_SECONDS = 12
 
 
 @dataclass
@@ -47,102 +44,148 @@ class CollectionResult:
     interfaces: dict = field(default_factory=dict)
     network: dict = field(default_factory=dict)
     errors: dict = field(default_factory=dict)
+    diagnostics: dict = field(default_factory=dict)
 
 
 class MikroTikHealthCollector:
-    """Collects complete MikroTik health data using an SSH executor."""
+    """Collects complete MikroTik health data using an SSH executor.
+
+    Commands run sequentially for SSH reliability. Each command is tried
+    with as-value first; if output is empty, retried without as-value.
+    """
 
     def __init__(self, executor: MikroTikExecutor):
         self._executor = executor
-        self._semaphore = asyncio.Semaphore(MAX_PARALLEL_COMMANDS)
-        # Rate tracking: previous counter samples for computing deltas
-        self._prev_counters: dict[str, dict] = {}
-        self._last_sample_time: float = 0.0
 
-    async def _run(self, command: str) -> tuple[bool, str, float]:
-        """Execute a single command with semaphore. Returns (ok, output, duration_ms)."""
-        async with self._semaphore:
-            start = time.monotonic()
+    async def _run(self, command: str, fallback: str | None = None) -> tuple[bool, str, float]:
+        """Execute a command. If output is empty and fallback provided, try fallback.
+
+        Returns (ok, output, duration_ms).
+        """
+        start = time.monotonic()
+        try:
             ok, out = await self._executor._execute_no_raise(command)
+        except Exception as e:
             elapsed = (time.monotonic() - start) * 1000
-            if not ok:
-                logger.warning("Command failed (%.0fms): %s → %s", elapsed, command[:80], out[:100])
-            else:
-                logger.debug("Command OK (%.0fms): %s", elapsed, command[:80])
-            return ok, out, elapsed
+            logger.warning("Command exception (%.0fms): %s → %s", elapsed, command[:80], e)
+            return False, str(e), elapsed
+
+        elapsed = (time.monotonic() - start) * 1000
+
+        # If as-value produced empty output, try fallback (non-as-value)
+        if ok and (not out or not out.strip()) and fallback:
+            logger.info("as-value returned empty for %s — trying fallback: %s", command[:60], fallback[:60])
+            start2 = time.monotonic()
+            try:
+                ok2, out2 = await self._executor._execute_no_raise(fallback)
+                elapsed = (time.monotonic() - start) * 1000
+                if ok2 and out2 and out2.strip():
+                    logger.info("Fallback command OK for %s", fallback[:60])
+                    return True, out2, elapsed
+            except Exception:
+                pass
+
+        if not ok:
+            logger.warning("Command failed (%.0fms): %s → %s", elapsed, command[:80], out[:100])
+        elif not out or not out.strip():
+            logger.warning("Command returned empty output: %s", command[:80])
+            ok = False
+            out = "empty"
+        else:
+            logger.info("Command OK (%.0fms): %s (%d bytes)", elapsed, command[:80], len(out))
+
+        return ok, out, elapsed
 
     # ------------------------------------------------------------------
     # Complete collection
     # ------------------------------------------------------------------
 
-    async def collect_all(self, include_live_rates: bool = False) -> CollectionResult:
-        """Collect all MikroTik health data. Returns partial results on failure.
-
-        Args:
-            include_live_rates: If True, also run monitor-traffic for running interfaces.
-        """
+    async def collect_all(self) -> CollectionResult:
+        """Collect all MikroTik health data sequentially."""
         result = CollectionResult()
         start = time.monotonic()
         result.collected_at = datetime.now(timezone.utc).isoformat()
 
-        # Phase 1: Static/rarely-changing data (run concurrently)
-        tasks = {
-            "system_resource": self._run("/system/resource/print as-value"),
-            "routerboard": self._run("/system/routerboard/print as-value"),
-            "identity": self._run("/system/identity/print as-value"),
-            "health": self._run("/system/health/print as-value"),
-            "interfaces": self._run("/interface/print detail as-value without-paging"),
-        }
+        # Run commands sequentially (SSH is single-connection, concurrent causes issues)
+        diag: dict[str, dict] = {}
 
-        results: dict[str, tuple[bool, str, float]] = {}
-        for name, coro in tasks.items():
-            try:
-                results[name] = await asyncio.wait_for(coro, timeout=TOTAL_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
-                results[name] = (False, "", TOTAL_TIMEOUT_SECONDS * 1000)
-                result.warnings.append(f"Timeout: {name}")
-                result.errors[name] = "timeout"
-
-        # Phase 2: Parse everything
-        self._parse_system_resource(result, results.get("system_resource", (False, "", 0)))
-        self._parse_routerboard(result, results.get("routerboard", (False, "", 0)))
-        self._parse_identity(result, results.get("identity", (False, "", 0)))
-        self._parse_health(result, results.get("health", (False, "", 0)))
-        self._parse_interfaces(result, results.get("interfaces", (False, "", 0)))
-
-        # Check reachability
-        if not results.get("system_resource", (False, ""))[0]:
+        # 1. System resource (critical — determines reachability)
+        ok, out, dur = await self._run(
+            "/system/resource/print as-value",
+            fallback="/system/resource/print",
+        )
+        diag["system_resource"] = {"ok": ok, "duration_ms": dur, "bytes": len(out) if ok else 0}
+        if not ok:
             result.reachable = False
             result.success = False
+            result.errors["system_resource"] = "command_failed" if out != "empty" else "empty"
+            result.warnings.append(f"System resource unavailable: {out}")
+            result.diagnostics = diag
+            return result
+        self._parse_system_resource(result, out)
+
+        # 2. Routerboard (static info)
+        ok, out, dur = await self._run(
+            "/system/routerboard/print as-value",
+            fallback="/system/routerboard/print",
+        )
+        diag["routerboard"] = {"ok": ok, "duration_ms": dur, "bytes": len(out) if ok else 0}
+        if ok:
+            self._parse_routerboard(result, out)
+        else:
+            result.warnings.append("Routerboard info unavailable")
+
+        # 3. Identity
+        ok, out, dur = await self._run(
+            "/system/identity/print as-value",
+            fallback="/system/identity/print",
+        )
+        diag["identity"] = {"ok": ok, "duration_ms": dur, "bytes": len(out) if ok else 0}
+        if ok:
+            self._parse_identity(result, out)
+
+        # 4. Health sensors (optional)
+        ok, out, dur = await self._run(
+            "/system/health/print as-value",
+            fallback="/system/health/print",
+        )
+        diag["health"] = {"ok": ok, "duration_ms": dur, "bytes": len(out) if ok else 0}
+        if ok:
+            self._parse_health(result, out)
+        else:
+            result.warnings.append("Health sensors unavailable (permission or unsupported hardware)")
+
+        # 5. Interfaces (critical for dashboard)
+        ok, out, dur = await self._run(
+            "/interface/print detail as-value without-paging",
+            fallback="/interface/print detail without-paging",
+        )
+        diag["interfaces"] = {"ok": ok, "duration_ms": dur, "bytes": len(out) if ok else 0}
+        if ok:
+            self._parse_interfaces(result, out)
+        else:
+            result.warnings.append("Interfaces unavailable")
+            result.errors["interfaces"] = "command_failed" if out != "empty" else "empty"
 
         result.partial = len(result.warnings) > 0
         result.latency_ms = (time.monotonic() - start) * 1000
+        result.diagnostics = diag
         return result
 
     # ------------------------------------------------------------------
-    # Parsers for each section
+    # Parsers
     # ------------------------------------------------------------------
 
-    def _parse_system_resource(self, result: CollectionResult, raw: tuple[bool, str, float]) -> None:
-        ok, out, _ = raw
-        if not ok:
-            result.warnings.append("Failed to read /system/resource")
-            result.errors["system_resource"] = "command_failed"
-            return
-
+    def _parse_system_resource(self, result: CollectionResult, out: str) -> None:
         records = parse_routeros_records(out)
         if not records:
-            result.errors["system_resource"] = "empty"
+            result.errors["system_resource"] = "parse_empty"
             return
-
         r = records[0]
-        total_kib = parse_routeros_number(r.get("total-memory")) or parse_routeros_number(r.get("total_hdd_size"))
-        free_kib = parse_routeros_number(r.get("free-memory")) or parse_routeros_number(r.get("free_hdd_size"))
-        # Actual memory is in KiB from RouterOS
-        total_bytes = (int(total_kib) * 1024) if total_kib else None
-        free_bytes_val = (int(free_kib) * 1024) if free_kib else None
-        total_memory = parse_routeros_bytes(r.get("total-memory"))
-        free_memory = parse_routeros_bytes(r.get("free-memory"))
+
+        total_mem = parse_routeros_bytes(r.get("total-memory"))
+        free_mem = parse_routeros_bytes(r.get("free-memory"))
+        used_mem = (total_mem - free_mem) if (total_mem is not None and free_mem is not None) else None
 
         result.system.update({
             "cpu_model": r.get("cpu"),
@@ -154,69 +197,52 @@ class MikroTikHealthCollector:
             "architecture": r.get("architecture-name"),
             "board_name": r.get("board-name"),
             "platform": r.get("platform"),
+            "routeros_version": r.get("version"),
         })
 
         result.memory.update({
-            "total_bytes": total_memory,
-            "free_bytes": free_memory,
-            "used_bytes": (total_memory - free_memory) if (total_memory is not None and free_memory is not None) else None,
-            "usage_percent": round(((total_memory - free_memory) / total_memory) * 100, 1) if (total_memory and free_memory and total_memory > 0) else None,
-            "total_display": format_bytes(total_memory) if total_memory else "N/A",
-            "free_display": format_bytes(free_memory) if free_memory else "N/A",
-            "used_display": format_bytes(total_memory - free_memory) if (total_memory is not None and free_memory is not None) else "N/A",
+            "total_bytes": total_mem,
+            "free_bytes": free_mem,
+            "used_bytes": used_mem,
+            "usage_percent": round((used_mem / total_mem) * 100, 1) if (total_mem and used_mem is not None and total_mem > 0) else None,
+            "total_display": format_bytes(total_mem) if total_mem else "N/A",
+            "free_display": format_bytes(free_mem) if free_mem else "N/A",
+            "used_display": format_bytes(used_mem) if used_mem else "N/A",
         })
 
-        # Storage
-        total_hdd = parse_routeros_bytes(r.get("total-hdd-space")) or parse_routeros_bytes(r.get("total_hdd_size"))
-        free_hdd = parse_routeros_bytes(r.get("free-hdd-space")) or parse_routeros_bytes(r.get("free_hdd_size"))
+        # Storage from resource
+        total_hdd = parse_routeros_bytes(r.get("total-hdd-space"))
+        free_hdd = parse_routeros_bytes(r.get("free-hdd-space"))
         result.storage.update({
             "total_bytes": total_hdd,
             "free_bytes": free_hdd,
-            "used_bytes": (total_hdd - free_hdd) if total_hdd is not None and free_hdd is not None else None,
+            "used_bytes": (total_hdd - free_hdd) if (total_hdd is not None and free_hdd is not None) else None,
             "usage_percent": round(((total_hdd - free_hdd) / total_hdd) * 100, 1) if (total_hdd and free_hdd and total_hdd > 0) else None,
         })
 
-    def _parse_routerboard(self, result: CollectionResult, raw: tuple[bool, str, float]) -> None:
-        ok, out, _ = raw
-        if not ok:
-            result.warnings.append("Failed to read /system/routerboard")
-            return
+    def _parse_routerboard(self, result: CollectionResult, out: str) -> None:
         records = parse_routeros_records(out)
         if records:
             r = records[0]
             result.system.update({
-                "model": r.get("model") or r.get("board-name"),
+                "model": r.get("model"),
                 "serial_number": r.get("serial-number"),
                 "firmware_type": r.get("firmware-type"),
-                "factory_firmware": r.get("factory-firmware"),
                 "current_firmware": r.get("current-firmware"),
                 "upgrade_firmware": r.get("upgrade-firmware"),
             })
 
-    def _parse_identity(self, result: CollectionResult, raw: tuple[bool, str, float]) -> None:
-        ok, out, _ = raw
-        if not ok:
-            return
+    def _parse_identity(self, result: CollectionResult, out: str) -> None:
         records = parse_routeros_records(out)
         if records:
             result.system["identity"] = records[0].get("name", "")
 
-    def _parse_health(self, result: CollectionResult, raw: tuple[bool, str, float]) -> None:
-        ok, out, _ = raw
-        if not ok:
-            result.warnings.append("Health sensors unavailable (permission or unsupported)")
-            result.errors["health"] = "unavailable"
-            return
+    def _parse_health(self, result: CollectionResult, out: str) -> None:
         records = parse_routeros_records(out)
         if not records:
             return
         r = records[0]
-        sensors: dict[str, str] = {}
-        for k, v in r.items():
-            if k.startswith("."):
-                continue
-            sensors[k] = v
-
+        sensors: dict[str, str] = {k: v for k, v in r.items() if not k.startswith(".")}
         result.health.update({
             "cpu_temperature_c": parse_routeros_temperature(r.get("cpu-temperature") or r.get("temperature")),
             "board_temperature_c": parse_routeros_temperature(r.get("board-temperature1")),
@@ -225,16 +251,10 @@ class MikroTikHealthCollector:
             "sensors": sensors,
         })
 
-    def _parse_interfaces(self, result: CollectionResult, raw: tuple[bool, str, float]) -> None:
-        ok, out, _ = raw
-        if not ok:
-            result.warnings.append("Failed to read /interface/print")
-            result.errors["interfaces"] = "command_failed"
-            return
-
+    def _parse_interfaces(self, result: CollectionResult, out: str) -> None:
         records = parse_routeros_records(out)
         if not records:
-            result.errors["interfaces"] = "empty"
+            result.errors["interfaces"] = "parse_empty"
             return
 
         items: list[dict] = []
@@ -245,9 +265,7 @@ class MikroTikHealthCollector:
             running = parse_routeros_bool(r.get("running"))
             disabled = parse_routeros_bool(r.get("disabled"))
             dynamic = parse_routeros_bool(r.get("dynamic"))
-            slave = parse_routeros_bool(r.get("slave"))
 
-            # Determine status
             if disabled:
                 status = "disabled"
             elif running:
@@ -255,7 +273,6 @@ class MikroTikHealthCollector:
             else:
                 status = "inactive"
 
-            # Count
             summary["total"] += 1
             if running:
                 summary["running"] += 1
@@ -266,7 +283,7 @@ class MikroTikHealthCollector:
             if dynamic:
                 summary["dynamic"] += 1
 
-            iface = {
+            items.append({
                 "id": r.get(".id", ""),
                 "name": name,
                 "default_name": r.get("default-name", name),
@@ -275,25 +292,25 @@ class MikroTikHealthCollector:
                 "running": running,
                 "disabled": disabled,
                 "dynamic": dynamic,
-                "slave": slave,
+                "slave": parse_routeros_bool(r.get("slave")),
                 "status": status,
                 "mac_address": r.get("mac-address", ""),
                 "actual_mtu": parse_routeros_number(r.get("actual-mtu")),
                 "l2mtu": parse_routeros_number(r.get("l2mtu")),
                 "max_l2mtu": parse_routeros_number(r.get("max-l2mtu")),
-                "rx_bytes": parse_routeros_number(r.get("rx-byte")) or parse_routeros_number(r.get("rx-bytes")),
-                "tx_bytes": parse_routeros_number(r.get("tx-byte")) or parse_routeros_number(r.get("tx-bytes")),
-                "rx_packets": parse_routeros_number(r.get("rx-packet")) or parse_routeros_number(r.get("rx-packets")),
-                "tx_packets": parse_routeros_number(r.get("tx-packet")) or parse_routeros_number(r.get("tx-packets")),
-                "rx_drops": parse_routeros_number(r.get("rx-drop")) or parse_routeros_number(r.get("rx-drops")),
-                "tx_drops": parse_routeros_number(r.get("tx-drop")) or parse_routeros_number(r.get("tx-drops")),
-                "rx_errors": parse_routeros_number(r.get("rx-error")) or parse_routeros_number(r.get("rx-errors")),
-                "tx_errors": parse_routeros_number(r.get("tx-error")) or parse_routeros_number(r.get("tx-errors")),
+                "rx_bytes": parse_routeros_number(r.get("rx-byte")),
+                "tx_bytes": parse_routeros_number(r.get("tx-byte")),
+                "rx_packets": parse_routeros_number(r.get("rx-packet")),
+                "tx_packets": parse_routeros_number(r.get("tx-packet")),
+                "rx_drops": parse_routeros_number(r.get("rx-drop")),
+                "tx_drops": parse_routeros_number(r.get("tx-drop")),
+                "rx_errors": parse_routeros_number(r.get("rx-error")),
+                "tx_errors": parse_routeros_number(r.get("tx-error")),
                 "last_link_up_time": r.get("last-link-up-time", ""),
                 "last_link_down_time": r.get("last-link-down-time"),
                 "link_downs": parse_routeros_number(r.get("link-downs")),
-                "_raw": r,
-            }
-            items.append(iface)
+            })
 
         result.interfaces = {"summary": summary, "items": items}
+        logger.info("Parsed %d interfaces (running=%d, inactive=%d, disabled=%d)",
+                     summary["total"], summary["running"], summary["inactive"], summary["disabled"])
