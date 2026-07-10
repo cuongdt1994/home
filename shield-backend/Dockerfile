@@ -13,9 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ app/
 COPY scripts/ scripts/
 
-# Non-root user
-RUN useradd -m -u 1000 shield && chown -R shield:shield /app
-USER shield
+# Create writable directories for mounted volumes
+RUN mkdir -p /data /logs
 
 EXPOSE 8088
 

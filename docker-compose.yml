@@ -20,10 +20,6 @@ services:
     cpus: 1.0
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp
     deploy:
       resources:
         limits:
