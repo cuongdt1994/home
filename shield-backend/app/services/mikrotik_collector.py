@@ -75,15 +75,14 @@ class MikroTikHealthCollector:
         # If as-value produced empty output, try fallback (non-as-value)
         if ok and (not out or not out.strip()) and fallback:
             logger.info("as-value returned empty for %s — trying fallback: %s", command[:60], fallback[:60])
-            start2 = time.monotonic()
             try:
                 ok2, out2 = await self._executor._execute_no_raise(fallback)
                 elapsed = (time.monotonic() - start) * 1000
                 if ok2 and out2 and out2.strip():
                     logger.info("Fallback command OK for %s", fallback[:60])
                     return True, out2, elapsed
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Fallback command also failed: %s → %s", fallback[:60], e)
 
         if not ok:
             logger.warning("Command failed (%.0fms): %s → %s", elapsed, command[:80], out[:100])

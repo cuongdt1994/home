@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from app.config import settings as app_settings
 from app.services.ntopng import (
     NtopngClient,
     NtopngError,
@@ -49,7 +50,7 @@ class NtopngStatisticsCollector:
         self._sem = asyncio.Semaphore(MAX_CONCURRENCY)
         # Short-lived cache
         self._cache: dict[str, tuple[float, Any]] = {}
-        self._cache_ttl = getattr(__import__('app.config', fromlist=['settings']).settings, 'NTOPNG_CACHE_TTL', 5)
+        self._cache_ttl = app_settings.NTOPNG_CACHE_TTL
 
         # Last known good result (for stale fallback)
         self._last_good: Optional[NtopngOverview] = None

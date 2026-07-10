@@ -1,7 +1,11 @@
 """Unit tests for the RouterOS output parser (Section 16)."""
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "shield-backend"))
+
 import pytest
-from shield_backend.app.services.routeros_parser import (
+from app.services.routeros_parser import (
     parse_routeros_records,
     parse_routeros_bool,
     parse_routeros_bytes,
