@@ -22,8 +22,14 @@ async_session = async_sessionmaker(
 async def init_database() -> None:
     """Create all tables and enable WAL mode."""
     import logging
+    import os
 
     logger = logging.getLogger(__name__)
+
+    # Ensure parent directory exists
+    db_dir = os.path.dirname(settings.DATABASE_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
 
     # Enable WAL mode for better concurrent read performance
     import aiosqlite
