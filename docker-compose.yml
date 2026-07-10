@@ -39,7 +39,7 @@ services:
     container_name: shield-frontend
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "3500:80"
     depends_on:
       shield-backend:
         condition: service_healthy

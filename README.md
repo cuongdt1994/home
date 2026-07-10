@@ -92,7 +92,7 @@ docker compose exec shield-backend python scripts/init_admin.py \
 
 ### 5. Access the Dashboard
 
-- **Direct:** http://your-server:3000
+- **Direct:** http://your-server:3500
 - **With reverse proxy:** http://your-server
 - **Backend API:** http://your-server:8088
 

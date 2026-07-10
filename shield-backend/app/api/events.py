@@ -5,7 +5,6 @@ import logging
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import StreamingResponse
-from sse_starlette.sse import EventSourceResponse
 
 from app.auth.dependencies import get_current_user
 from app.models.user import User
