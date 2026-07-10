@@ -166,15 +166,38 @@ def create_app() -> FastAPI:
     # Mount all API routes under /api
     app.include_router(api_router)
 
-    # Public health check (no auth)
+    # Health endpoints (Section 20)
     @app.get("/health")
     async def health():
-        """Public health check endpoint."""
+        """Full health check — all services."""
         state = app.state.health_state
         ok_count = sum(1 for s in state.values() if isinstance(s, dict) and s.get("ok"))
         total = len([s for s in state.values() if isinstance(s, dict)])
-        overall = "ok" if ok_count == total else ("degraded" if ok_count > 0 else "down")
+        overall = "healthy" if ok_count == total else ("degraded" if ok_count > 0 else "unhealthy")
         return {"status": overall, "services": state}
+
+    @app.get("/health/live")
+    async def health_live():
+        """Liveness check — process and event loop functioning."""
+        return {"status": "healthy"}
+
+    @app.get("/health/ready")
+    async def health_ready():
+        """Readiness check — API can serve requests, DB is available."""
+        state = app.state.health_state
+        db_ok = state.get("database", {}).get("ok", False)
+        return {
+            "status": "healthy" if db_ok else "unhealthy",
+            "database": db_ok,
+        }
+
+    @app.get("/health/dependencies")
+    async def health_dependencies():
+        """Dependency status — Suricata, DB, ntopng, MikroTik, DeepSeek, Telegram."""
+        state = app.state.health_state
+        return {"status": "degraded" if not all(
+            state.get(s, {}).get("ok") for s in ["database"]
+        ) else "healthy", "services": state}
 
     return app
 

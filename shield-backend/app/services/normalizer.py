@@ -48,7 +48,7 @@ class NormalizedEvent:
     file_md5: Optional[str] = None
     stats_data: Optional[dict] = None
     anomaly_type: Optional[str] = None
-    raw: dict = field(repr=False)
+    raw: dict = field(default_factory=dict, repr=False)
 
     @property
     def summary(self) -> str:

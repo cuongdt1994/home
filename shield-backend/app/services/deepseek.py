@@ -1,15 +1,18 @@
-"""DeepSeek AI API client with strict JSON validation and bounded concurrency."""
+"""DeepSeek AI API client with strict JSON validation, bounded concurrency,
+prompt-injection protection (Section 7), and budget controls (Section 8)."""
 
 import asyncio
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
 from pydantic import ValidationError
 
 from app.config import settings
+from app.services.prompt_sanitizer import build_safe_event_summary, validate_deepseek_response
 from app.utils.schema import DeepSeekDecision
 
 logger = logging.getLogger(__name__)
@@ -46,12 +49,26 @@ SAFE_DECISION = DeepSeekDecision(
 
 
 class DeepSeekClient:
-    """Async client for the DeepSeek API with timeout, semaphore, and validation."""
+    """Async client for the DeepSeek API with timeout, semaphore, validation,
+    prompt-injection protection, budget tracking, and circuit breaker."""
 
     def __init__(self):
         self._semaphore = asyncio.Semaphore(settings.AI_MAX_CONCURRENT_REQUESTS)
         self._client: Optional[httpx.AsyncClient] = None
         self._last_latency_ms: Optional[float] = None
+        # Budget tracking (Section 8)
+        self._hourly_count = 0
+        self._daily_count = 0
+        self._hour_reset = datetime.now(timezone.utc)
+        self._day_reset = datetime.now(timezone.utc)
+        # Circuit breaker (Section 8)
+        self._failure_count = 0
+        self._last_failure_time: float = 0.0
+        self._circuit_open = False
+        self._circuit_opened_at: float = 0.0
+        # Cache for deduplication
+        self._decision_cache: dict[str, tuple[float, DeepSeekDecision]] = {}
+        self._cache_ttl = getattr(settings, 'AI_CACHE_TTL_SECONDS', 3600)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -69,17 +86,63 @@ class DeepSeekClient:
     def last_latency_ms(self) -> Optional[float]:
         return self._last_latency_ms
 
-    async def analyze(self, event_summary: str) -> DeepSeekDecision:
-        """Send an aggregated event summary to DeepSeek for classification.
+    async def analyze(self, event_summary: str, raw_event_data: dict | None = None) -> DeepSeekDecision:
+        """Send a sanitized event summary to DeepSeek for classification.
 
         Args:
-            event_summary: Human-readable summary of aggregated alerts.
+            event_summary: Human-readable summary (legacy, not used if raw_event_data provided).
+            raw_event_data: Raw aggregated event data — will be sanitized before sending.
 
         Returns:
             Validated DeepSeekDecision, or SAFE_DECISION on any failure.
         """
+        # Check if AI is enabled
+        if not getattr(settings, 'AI_ENABLED', True):
+            return SAFE_DECISION
+
+        # Check budget limits (Section 8)
+        self._check_budget_reset()
+        daily_limit = getattr(settings, 'AI_DAILY_REQUEST_LIMIT', 500)
+        hourly_limit = getattr(settings, 'AI_HOURLY_REQUEST_LIMIT', 100)
+        if self._daily_count >= daily_limit or self._hourly_count >= hourly_limit:
+            logger.warning("AI budget exhausted (daily=%d/%d, hourly=%d/%d)",
+                           self._daily_count, daily_limit, self._hourly_count, hourly_limit)
+            return SAFE_DECISION
+
+        # Check circuit breaker
+        if self._circuit_open:
+            cooldown = getattr(settings, 'AI_FAILURE_COOLDOWN_SECONDS', 300)
+            if time.monotonic() - self._circuit_opened_at < cooldown:
+                logger.warning("Circuit breaker open — skipping AI call")
+                return SAFE_DECISION
+            else:
+                self._circuit_open = False
+                self._failure_count = 0
+                logger.info("Circuit breaker reset")
+
+        # Cache check
+        cache_key = event_summary[:200]
+        if cache_key in self._decision_cache:
+            cached_time, cached_decision = self._decision_cache[cache_key]
+            if time.monotonic() - cached_time < self._cache_ttl:
+                logger.debug("AI cache hit")
+                return cached_decision
+
+        # Build sanitized prompt if raw data provided
+        safe_summary = event_summary
+        if raw_event_data:
+            safe_summary = build_safe_event_summary(raw_event_data)
+
         async with self._semaphore:
-            return await self._call_api(event_summary)
+            result = await self._call_api(safe_summary)
+
+        # Cache result
+        self._decision_cache[cache_key] = (time.monotonic(), result)
+        # Prune cache
+        if len(self._decision_cache) > 1000:
+            self._decision_cache.clear()
+
+        return result
 
     async def _call_api(self, event_summary: str) -> DeepSeekDecision:
         """Internal API call with timeout and validation."""
@@ -117,13 +180,20 @@ class DeepSeekClient:
                     content = content[:-3]
                 content = content.strip()
 
-            parsed = json.loads(content)
+            # Validate with sanitizer (Section 7)
+            parsed = validate_deepseek_response(content)
+            if parsed is None:
+                raise ValueError(f"DeepSeek response failed validation: {content[:200]}")
+
             decision = DeepSeekDecision.model_validate(parsed)
 
             elapsed = (time.monotonic() - start) * 1000
             self._last_latency_ms = elapsed
+            self._hourly_count += 1
+            self._daily_count += 1
+            self._failure_count = 0  # Reset on success
             logger.info(
-                "DeepSeek decision: ip_hidden malicious=%s risk=%d latency=%.0fms",
+                "DeepSeek decision: malicious=%s risk=%d latency=%.0fms",
                 decision.is_malicious, decision.risk_score, elapsed,
             )
             return decision
@@ -149,6 +219,13 @@ class DeepSeekClient:
         except Exception:
             elapsed = (time.monotonic() - start) * 1000
             self._last_latency_ms = elapsed
+            self._failure_count += 1
+            self._last_failure_time = time.monotonic()
+            # Open circuit breaker after 5 consecutive failures
+            if self._failure_count >= 5:
+                self._circuit_open = True
+                self._circuit_opened_at = time.monotonic()
+                logger.warning("Circuit breaker OPEN after %d failures", self._failure_count)
             logger.exception("DeepSeek unexpected error")
             return SAFE_DECISION
 
@@ -164,6 +241,27 @@ class DeepSeekClient:
             return True, elapsed
         except Exception:
             return False, None
+
+    def _check_budget_reset(self) -> None:
+        """Reset hourly/daily counters when their windows expire."""
+        now = datetime.now(timezone.utc)
+        if (now - self._hour_reset).total_seconds() >= 3600:
+            self._hourly_count = 0
+            self._hour_reset = now
+        if (now - self._day_reset).total_seconds() >= 86400:
+            self._daily_count = 0
+            self._day_reset = now
+
+    def get_metrics(self) -> dict:
+        """Return AI usage metrics for Prometheus/health."""
+        return {
+            "hourly_requests": self._hourly_count,
+            "daily_requests": self._daily_count,
+            "failure_count": self._failure_count,
+            "circuit_open": self._circuit_open,
+            "cache_size": len(self._decision_cache),
+            "last_latency_ms": self._last_latency_ms,
+        }
 
     async def close(self) -> None:
         if self._client is not None:

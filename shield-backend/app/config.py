@@ -53,6 +53,37 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
 
+    # --- Safety & Mitigation (Sections 2-4) ---
+    MITIGATION_ENABLED: bool = True
+    AUTO_BLOCK_ENABLED: bool = True
+    PERMANENT_AUTO_BLOCK_ENABLED: bool = False
+    FIRST_BLOCK_TIMEOUT: str = "1h"
+    SECOND_BLOCK_TIMEOUT: str = "24h"
+    REPEAT_BLOCK_TIMEOUT: str = "7d"
+
+    # --- AI Budget & Rate Limits (Section 8) ---
+    AI_ENABLED: bool = True
+    AI_DAILY_REQUEST_LIMIT: int = 500
+    AI_HOURLY_REQUEST_LIMIT: int = 100
+    AI_CACHE_TTL_SECONDS: int = 3600
+    AI_FAILURE_COOLDOWN_SECONDS: int = 300
+
+    # --- Telegram Dedup (Section 35) ---
+    TELEGRAM_MIN_RISK_SCORE: int = 8
+    TELEGRAM_RATE_LIMIT_PER_MINUTE: int = 10
+    TELEGRAM_DEDUP_WINDOW_SECONDS: int = 300
+
+    # --- Database ---
+    API_DEFAULT_PAGE_SIZE: int = 50
+    API_MAX_PAGE_SIZE: int = 200
+    API_MAX_QUERY_RANGE_DAYS: int = 30
+
+    # --- EVE Tailer (Section 11) ---
+    EVE_CHECKPOINT_PATH: str = "/data/eve-checkpoint.json"
+    EVE_CHECKPOINT_INTERVAL_SECONDS: int = 5
+    EVE_REPLAY_BYTES: int = 65536
+    EVE_MAX_LINE_BYTES: int = 1048576
+
     # --- Whitelist ---
     WHITELIST_CIDRS: str = ""
 
