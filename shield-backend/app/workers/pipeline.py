@@ -154,7 +154,7 @@ async def run_pipeline(shutdown_event: asyncio.Event, app_state) -> None:
                 decision = await deepseek.analyze(aggregated.summary or aggregated.to_summary_text())
 
                 # Save AI report
-                await _save_ai_report(aggregated, decision)
+                await _save_ai_report(aggregated, decision, deepseek.last_latency_ms)
                 await event_bus.publish("ai_decision", {
                     "src_ip": aggregated.src_ip, "is_malicious": decision.is_malicious,
                     "risk_score": decision.risk_score, "reason": decision.reason,
@@ -256,7 +256,7 @@ async def _save_aggregated_event(agg: AggregatedEvent) -> None:
         logger.exception("Failed to save aggregated event to DB")
 
 
-async def _save_ai_report(agg: AggregatedEvent, decision) -> None:
+async def _save_ai_report(agg: AggregatedEvent, decision, latency_ms: float | None = None) -> None:
     try:
         async with async_session() as db:
             report = AIThreatReport(
@@ -265,7 +265,7 @@ async def _save_ai_report(agg: AggregatedEvent, decision) -> None:
                 risk_score=decision.risk_score,
                 reason=decision.reason,
                 action_taken="allowed" if not decision.is_malicious else "analyzed",
-                latency_ms=deepseek.last_latency_ms,
+                latency_ms=latency_ms,
             )
             db.add(report)
             await db.commit()

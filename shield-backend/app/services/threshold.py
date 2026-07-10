@@ -34,7 +34,7 @@ class ThresholdEngine:
         self._file_path = file_path
         self._default_window: int = 300
         self._rules: list[ThresholdRule] = []
-        self._default_rule = ThresholdRule(name="default", min_count=15, window_seconds=300)
+        self._default_rule = ThresholdRule(name="default", min_count=15, window_seconds=300, match_event_types=["alert"])
         self.reload()
 
     def reload(self) -> None:

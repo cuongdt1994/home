@@ -28,7 +28,8 @@ rules:
     min_count: 5
     window_seconds: 300
 
-  # Default fallback for unmatched alert types
+  # Default fallback for unmatched alert types — alerts only, not flow/quic/dns/etc.
   default:
+    match_event_types: ["alert"]
     min_count: 15
     window_seconds: 300
