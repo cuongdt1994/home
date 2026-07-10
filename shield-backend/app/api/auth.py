@@ -91,13 +91,14 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     token = create_access_token(data={"sub": str(user.id), "username": user.username})
 
     # If user doesn't have TOTP set up, provide provisioning URI
+    # Only generate a new secret if one doesn't already exist for this user
     requires_setup = not user.totp_enabled
     provisioning_uri = None
     if requires_setup:
-        new_secret = generate_totp_secret()
-        user.totp_secret = new_secret
-        await db.commit()
-        provisioning_uri = get_provisioning_uri(user.username, new_secret)
+        if not user.totp_secret:
+            user.totp_secret = generate_totp_secret()
+            await db.commit()
+        provisioning_uri = get_provisioning_uri(user.username, user.totp_secret)
 
     return TokenResponse(
         access_token=token,

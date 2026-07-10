@@ -153,10 +153,10 @@ class MitigationOrchestrator:
             return {"action": "below_threshold", "success": True, "blocked": False}
 
         # ---------------------------------------------------------------
-        # 4. Escalation timeout
+        # 4. Escalation timeout — record offense first so count is correct
         # ---------------------------------------------------------------
-        timeout, offense_count = self._get_escalation_timeout(src_ip)
         self._rule_engine.record_offense(src_ip)
+        timeout, offense_count = self._get_escalation_timeout(src_ip)
 
         # ---------------------------------------------------------------
         # 5. Idempotency check

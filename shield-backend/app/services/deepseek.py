@@ -201,32 +201,33 @@ class DeepSeekClient:
         except httpx.TimeoutException:
             elapsed = (time.monotonic() - start) * 1000
             self._last_latency_ms = elapsed
-            logger.warning("DeepSeek timeout after %.0fms", elapsed)
+            self._failure_count += 1
+            logger.warning("DeepSeek timeout after %.0fms (failure %d)", elapsed, self._failure_count)
+            self._check_circuit_breaker()
             return SAFE_DECISION
 
         except (json.JSONDecodeError, ValidationError) as e:
             elapsed = (time.monotonic() - start) * 1000
             self._last_latency_ms = elapsed
-            logger.warning("DeepSeek returned invalid response: %s (latency=%.0fms)", e, elapsed)
+            self._failure_count += 1
+            logger.warning("DeepSeek returned invalid response: %s (failure %d)", e, self._failure_count)
+            self._check_circuit_breaker()
             return SAFE_DECISION
 
         except httpx.HTTPStatusError as e:
             elapsed = (time.monotonic() - start) * 1000
             self._last_latency_ms = elapsed
-            logger.error("DeepSeek HTTP %d: %s", e.response.status_code, e.response.text[:200])
+            self._failure_count += 1
+            logger.error("DeepSeek HTTP %d: %s (failure %d)", e.response.status_code, e.response.text[:200], self._failure_count)
+            self._check_circuit_breaker()
             return SAFE_DECISION
 
         except Exception:
             elapsed = (time.monotonic() - start) * 1000
             self._last_latency_ms = elapsed
             self._failure_count += 1
-            self._last_failure_time = time.monotonic()
-            # Open circuit breaker after 5 consecutive failures
-            if self._failure_count >= 5:
-                self._circuit_open = True
-                self._circuit_opened_at = time.monotonic()
-                logger.warning("Circuit breaker OPEN after %d failures", self._failure_count)
-            logger.exception("DeepSeek unexpected error")
+            logger.exception("DeepSeek unexpected error (failure %d)", self._failure_count)
+            self._check_circuit_breaker()
             return SAFE_DECISION
 
     async def ping(self) -> tuple[bool, Optional[float]]:
@@ -241,6 +242,14 @@ class DeepSeekClient:
             return True, elapsed
         except Exception:
             return False, None
+
+    def _check_circuit_breaker(self) -> None:
+        """Open circuit breaker after repeated failures."""
+        self._last_failure_time = time.monotonic()
+        if self._failure_count >= 5:
+            self._circuit_open = True
+            self._circuit_opened_at = time.monotonic()
+            logger.warning("Circuit breaker OPEN after %d failures", self._failure_count)
 
     def _check_budget_reset(self) -> None:
         """Reset hourly/daily counters when their windows expire."""

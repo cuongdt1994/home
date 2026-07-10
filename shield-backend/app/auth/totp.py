@@ -26,6 +26,8 @@ def verify_totp(secret: str, code: str) -> bool:
         totp = pyotp.TOTP(secret)
         return totp.verify(code)
     except Exception:
+        import logging
+        logging.getLogger(__name__).warning("TOTP verification raised exception", exc_info=True)
         return False
 
 

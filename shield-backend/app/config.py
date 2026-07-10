@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     MIKROTIK_USER: str = "admin"
     MIKROTIK_PASSWORD: str = ""
     MIKROTIK_BLACKLIST_TIMEOUT: str = "7d"
+    MIKROTIK_MODE: str = "ssh"  # "auto" | "rest" | "ssh"
+    MIKROTIK_REST_BASE_URL: str = ""
 
     # --- ntopng ---
     NTOPNG_BASE_URL: str = "http://10.100.101.250:3000"

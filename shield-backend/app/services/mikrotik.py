@@ -203,15 +203,19 @@ class MikroTikExecutor:
                     if "cpu-load" in line:
                         health["cpu_percent"] = int(line.split(":")[-1].strip().rstrip("%") or 0)
                     elif "free-memory" in line:
-                        health["free_memory_mb"] = int(line.split(":")[-1].strip().rstrip("KiB") or 0) // 1024
+                        raw = line.split(":")[-1].strip()
+                        raw = raw.replace("KiB", "").replace("MiB", "").strip()
+                        health["free_memory_mb"] = (int(raw) if raw.isdigit() else 0) // 1024
                     elif "total-memory" in line:
-                        health["total_memory_mb"] = int(line.split(":")[-1].strip().rstrip("KiB") or 0) // 1024
+                        raw = line.split(":")[-1].strip()
+                        raw = raw.replace("KiB", "").replace("MiB", "").strip()
+                        health["total_memory_mb"] = (int(raw) if raw.isdigit() else 0) // 1024
                     elif "uptime" in line:
                         health["uptime"] = line.split(":")[-1].strip()
                     elif "version" in line:
                         health["version"] = line.split(":")[-1].strip()
 
-            if health["total_memory_mb"] and health["free_memory_mb"]:
+            if health["total_memory_mb"] is not None and health["free_memory_mb"] is not None and health["total_memory_mb"] > 0:
                 used = health["total_memory_mb"] - health["free_memory_mb"]
                 health["memory_percent"] = round((used / health["total_memory_mb"]) * 100, 1)
 

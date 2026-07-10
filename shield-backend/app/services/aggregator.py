@@ -1,8 +1,4 @@
-"""In-memory alert aggregation engine.
-
-Groups Suricata alerts by (src_ip, event_type) over sliding time windows.
-Emits AggregatedEvent when a bucket's window closes or a threshold is exceeded.
-"""
+"""In-memory alert aggregation engine."""
 
 import asyncio
 import logging
@@ -49,6 +45,7 @@ class AggregationBucket:
     alert_category: Optional[str]
     count: int = 0
     window_start: float = 0.0
+    window_seconds: int = 300  # Per-rule window, set on first event
     unique_targets: set[str] = field(default_factory=set)
     unique_ports: set[int] = field(default_factory=set)
     sample_events: list[dict] = field(default_factory=list)
@@ -57,7 +54,7 @@ class AggregationBucket:
     def add(self, event: NormalizedEvent) -> None:
         """Add an event to this bucket."""
         if self.window_start == 0.0:
-            self.window_start = time.time()
+            self.window_start = time.monotonic()
         self.count += 1
         if event.dest_ip:
             self.unique_targets.add(event.dest_ip)
@@ -127,10 +124,12 @@ class AggregationEngine:
         window = self._thresholds.get_window_for_event(event)
 
         if bucket is None:
+            window = self._thresholds.get_window_for_event(event)
             bucket = AggregationBucket(
                 src_ip=event.src_ip,
                 event_type=event.event_type,
                 alert_category=event.alert_category,
+                window_seconds=window,
             )
             self._buckets[key] = bucket
 
@@ -151,6 +150,11 @@ class AggregationEngine:
                 rule_name, key, bucket.count, len(bucket.unique_ports),
             )
             bucket.reset()
+            # Put on output queue so AI worker receives it
+            try:
+                self._output.put_nowait(aggregated)
+            except asyncio.QueueFull:
+                logger.warning("Output queue full — dropping aggregated event for %s", key)
             return aggregated
 
         return None
@@ -158,21 +162,32 @@ class AggregationEngine:
     async def sweep_expired(self) -> list[AggregatedEvent]:
         """Sweep all buckets and emit those with expired windows.
 
-        Called periodically. Any bucket older than its window is flushed.
+        Called periodically. Uses per-bucket window_seconds.
+        Empty buckets older than 2x their window are pruned.
         """
-        now = time.time()
+        now = time.monotonic()
         emitted: list[AggregatedEvent] = []
+        stale_keys: list[tuple] = []
 
         for key, bucket in list(self._buckets.items()):
-            if bucket.count == 0:
+            age = now - bucket.window_start
+            window = bucket.window_seconds
+
+            if bucket.count == 0 and age > window * 2:
+                stale_keys.append(key)
                 continue
 
-            window = self._thresholds._default_window
-            if now - bucket.window_start >= window:
+            if bucket.count > 0 and age >= window:
                 aggregated = bucket.to_aggregated(window)
                 aggregated.summary = aggregated.to_summary_text()
                 emitted.append(aggregated)
                 bucket.reset()
+
+        for key in stale_keys:
+            del self._buckets[key]
+
+        if stale_keys:
+            logger.debug("Pruned %d stale buckets", len(stale_keys))
 
         return emitted
 

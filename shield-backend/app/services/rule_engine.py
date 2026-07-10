@@ -157,14 +157,16 @@ class DeterministicRuleEngine:
             if not rule.enabled:
                 continue
 
-            # Check signature IDs
-            if rule.signature_ids and signature_id:
-                if signature_id not in rule.signature_ids:
+            # Check signature IDs — only apply if rule specifies them AND we have data
+            if rule.signature_ids:
+                if signature_id is None or signature_id not in rule.signature_ids:
                     continue
 
-            # Check categories
-            if rule.categories and category:
-                if not any(c.lower() in (category or "").lower() for c in rule.categories):
+            # Check categories — only apply if rule specifies them AND we have data
+            if rule.categories:
+                if category is None:
+                    continue
+                if not any(c.lower() in category.lower() for c in rule.categories):
                     continue
 
             # Check severity

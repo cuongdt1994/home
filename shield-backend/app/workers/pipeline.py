@@ -68,9 +68,10 @@ async def run_pipeline(shutdown_event: asyncio.Event, app_state) -> None:
     app_state.whitelist = whitelist
     app_state.threshold_engine = threshold_engine
     app_state.mikrotik = mikrotik
-    app_state.ntopng = None  # Will be set in main.py
+    # app_state.ntopng is already set by main.py lifespan — don't overwrite
     app_state.deepseek = deepseek
     app_state.eve_tailer = tailer
+    app_state.audit = audit
 
     # --- Stage workers ---
     async def tailer_worker():
@@ -264,7 +265,7 @@ async def _save_ai_report(agg: AggregatedEvent, decision) -> None:
                 risk_score=decision.risk_score,
                 reason=decision.reason,
                 action_taken="allowed" if not decision.is_malicious else "analyzed",
-                latency_ms=decision.latency_ms if hasattr(decision, 'latency_ms') else None,
+                latency_ms=deepseek.last_latency_ms,
             )
             db.add(report)
             await db.commit()

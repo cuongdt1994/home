@@ -84,13 +84,16 @@ class ThresholdEngine:
         Returns:
             (exceeded, rule_name) — rule_name is the matched rule or None.
         """
-        # Check specific rules first
+        # Check specific rules first — continue on non-match so later
+        # rules with lower thresholds still get evaluated
         for rule in self._rules:
             if self._event_matches_rule(event, rule):
                 exceeded = self._check_rule(count, unique_ports, rule)
                 if exceeded:
                     return True, rule.name
-                return False, rule.name
+                # Rule matched the event type but threshold not met —
+                # continue checking other rules that may have lower thresholds
+                continue
 
         # Fall back to default rule
         exceeded = self._check_rule(count, unique_ports, self._default_rule)

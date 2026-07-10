@@ -226,7 +226,13 @@ class Normalizer:
         if not ts_str:
             return datetime.now(timezone.utc)
         try:
-            ts_clean = ts_str[:26] + ts_str[27:30]
+            # Suricata format: "2026-07-10T01:00:00.000000+0000" (32 chars)
+            # Remove colon from timezone offset: "+0000" → "+0000" (already correct)
+            # Actually just strip the colon between +HH:MM → +HHMM
+            if len(ts_str) >= 29 and (ts_str[26] == '+' or ts_str[26] == '-'):
+                ts_clean = ts_str[:26] + ts_str[26:].replace(":", "")
+            else:
+                ts_clean = ts_str
             return datetime.strptime(ts_clean, "%Y-%m-%dT%H:%M:%S.%f%z")
         except (ValueError, IndexError):
             try:

@@ -12,6 +12,16 @@ import aiofiles
 logger = logging.getLogger(__name__)
 
 
+def _parse_timestamp(ts_str: str) -> datetime:
+    """Parse a Suricata timestamp string to datetime, falling back to now."""
+    if not ts_str:
+        return datetime.now(timezone.utc)
+    try:
+        return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return datetime.now(timezone.utc)
+
+
 class EveTailer:
     """Async tailer for Suricata eve.json that handles log rotation.
 
@@ -110,13 +120,9 @@ class EveTailer:
             return None
 
         # Track last event timestamp for health reporting
+        # Parse actual event timestamp for health reporting
         ts_str = event.get("timestamp", "")
-        if ts_str:
-            try:
-                # Suricata format: "2026-07-10T01:00:00.000000+0000"
-                self._last_event_at = datetime.now(timezone.utc)
-            except (ValueError, TypeError):
-                pass
+        self._last_event_at = _parse_timestamp(ts_str)
 
         return event
 

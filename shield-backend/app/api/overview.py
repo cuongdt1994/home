@@ -7,6 +7,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, get_db
+from app.config import settings
 from app.models.suricata_alert import SuricataAlert
 from app.models.ai_report import AIThreatReport
 from app.models.blocked_ip import BlockedIP
@@ -53,6 +54,6 @@ async def get_overview(
         "ai_reports_24h": report_total.scalar() or 0,
         "malicious_24h": malicious_count.scalar() or 0,
         "total_blocked_ips": blocked_total.scalar() or 0,
-        "dry_run": getattr(request.app.state, "config", None) is not None,
+        "dry_run": settings.DRY_RUN,
         "services": health_state,
     }

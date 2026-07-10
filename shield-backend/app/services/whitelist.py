@@ -45,7 +45,7 @@ class WhitelistEngine:
             try:
                 with open(self._file_path, "r") as f:
                     networks.extend(parse_cidrs(f.readlines()))
-                logger.info("Loaded %d entries from %s", len(networks), self._file_path)
+                logger.info("Loaded whitelist entries from %s", self._file_path)
             except Exception:
                 logger.exception("Failed to read whitelist file %s", self._file_path)
         else:
@@ -57,6 +57,7 @@ class WhitelistEngine:
             networks.extend(parse_cidrs(extra))
             logger.info("Loaded %d extra CIDRs from env", len(extra))
 
+        # Atomic assignment — is_whitelisted reads self._networks without lock
         self._networks = networks
         logger.info("Whitelist ready: %d total networks", len(self._networks))
 
