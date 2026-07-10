@@ -1,0 +1,15 @@
+# AI Shield Whitelist — IPs/CIDRs that must never be blocked
+# One entry per line. CIDR notation supported.
+# This file is hot-reloaded every 5 seconds.
+
+# Local infrastructure
+10.100.101.0/24
+10.100.101.1         # MikroTik router
+10.100.101.250       # Ubuntu Server (Suricata + ntopng)
+
+# Private RFC1918 ranges
+192.168.0.0/16
+172.16.0.0/12
+
+# Loopback
+127.0.0.0/8

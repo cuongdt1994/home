@@ -1,0 +1,1652 @@
+Act as a Senior DevOps Architect, Python Backend Engineer, and Cybersecurity Engineer.
+
+I need you to design and implement a production-ready “Headless Monitoring & Security Shield” system for my home/office network.
+
+## Infrastructure
+
+* MikroTik Router:
+
+  * IP: 10.100.101.1
+  * Management: SSH
+* Ubuntu Server:
+
+  * IP: 10.100.101.250
+  * Hosts Suricata and ntopng
+* Suricata log path:
+
+  * /var/log/suricata/eve.json
+* ntopng:
+
+  * Use REST API, do not scrape the web UI
+
+## Main Goal
+
+Build a lightweight, headless, containerized security dashboard and automation backend that can:
+
+1. Read Suricata alerts from eve.json.
+2. Aggregate suspicious events intelligently.
+3. Query ntopng REST API for live network stats.
+4. Query MikroTik via SSH for CPU, RAM, interface traffic, and health.
+5. Use DeepSeek API to analyze aggregated suspicious activity.
+6. If DeepSeek confirms an IP is malicious, automatically add that IP to a MikroTik firewall address-list.
+7. Protect the dashboard with mandatory JWT + TOTP authentication.
+8. Support dry-run mode, whitelist protection, audit logging, Telegram notification, health check, log pruning, graceful shutdown, and Docker resource limits.
+
+## Required Stack
+
+Backend:
+
+* Python 3.11+
+* FastAPI
+* asyncio
+* httpx
+* async database access with SQLite, preferably SQLAlchemy async or aiosqlite
+* pyotp for TOTP
+* python-jose or equivalent for JWT
+* paramiko or asyncssh for MikroTik SSH
+* structured logging to stdout/stderr
+
+Frontend:
+
+* React
+* TailwindCSS
+* Lightweight dashboard UI
+* Login page with username/password + TOTP code
+* Pages:
+
+  * Overview
+  * Suricata Alerts
+  * AI Threat Reports
+  * Blocked IP History
+  * MikroTik Health
+  * ntopng Stats
+  * Audit Logs
+  * Settings / Dry-run / Thresholds
+
+Infrastructure:
+
+* docker-compose.yml
+* Separate services:
+
+  * shield-backend
+  * shield-frontend
+  * optional reverse proxy
+* Use .env for all secrets and configuration
+* Add CPU/RAM limits to containers
+* No secrets hardcoded anywhere
+
+## Important Security and Robustness Requirements
+
+### 1. Dry-Run Mode
+
+Add DRY_RUN=true/false in environment variables.
+
+When DRY_RUN=true:
+
+* The system must not execute MikroTik block commands.
+* It should log:
+
+  * “DRY-RUN: Would block IP x.x.x.x”
+* It should still save AI reports and audit entries.
+
+### 2. Whitelist Protection
+
+Support whitelist.txt and optionally WHITELIST_CIDRS env var.
+
+The system must never block:
+
+* Local LAN ranges
+* MikroTik router IP
+* Ubuntu server IP
+* Known trusted IP ranges
+* Any IP/CIDR inside whitelist.txt
+
+Even if DeepSeek says malicious, whitelist must override the AI.
+
+Example whitelist.txt:
+
+```text
+10.100.101.0/24
+10.100.101.1
+10.100.101.250
+192.168.0.0/16
+172.16.0.0/12
+```
+
+### 3. Smart Packet / Alert Aggregation
+
+Do not send every Suricata log line to DeepSeek.
+
+Design an aggregation engine:
+
+* Group by:
+
+  * src_ip
+  * event type
+  * signature category
+  * time window
+* Example:
+
+  * “142 SSH brute-force alerts from 185.220.101.10 against 10.100.101.250 in 5 minutes”
+* Only send aggregated summaries to DeepSeek when thresholds are exceeded.
+* Make thresholds configurable in thresholds.yaml.
+* Prevent AI API spam and reduce cost.
+
+Example thresholds:
+
+```yaml
+windows:
+  default_seconds: 300
+
+rules:
+  ssh_bruteforce:
+    min_count: 10
+    window_seconds: 300
+  port_scan:
+    min_unique_ports: 20
+    window_seconds: 300
+  critical_suricata:
+    min_count: 3
+    window_seconds: 300
+```
+
+### 4. DeepSeek AI Orchestration
+
+Implement flow:
+
+```text
+Suricata event
+  -> normalize
+  -> whitelist check
+  -> aggregate
+  -> threshold filter
+  -> DeepSeek JSON decision
+  -> validate JSON schema
+  -> risk score check
+  -> dry-run check
+  -> MikroTik mitigation
+  -> audit log
+  -> Telegram notification
+```
+
+DeepSeek must be called with timeout.
+
+If DeepSeek is too slow:
+
+* Log execution time.
+* Skip low-priority analysis.
+* Do not block backend dashboard.
+* Use asyncio queue and bounded concurrency.
+
+Add env vars:
+
+```env
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_TIMEOUT_SECONDS=8
+AI_MAX_CONCURRENT_REQUESTS=2
+AI_BLOCK_RISK_SCORE=8
+```
+
+### 5. DeepSeek System Prompt
+
+Use this exact system prompt:
+
+```text
+You are a strict network security classification engine.
+
+You will receive a summarized security event from a home/office network. Your job is to decide whether the source IP is likely malicious and whether automated blocking is justified.
+
+Return ONLY a valid JSON object. Do not include markdown. Do not include explanations outside JSON.
+
+Schema:
+{
+  "is_malicious": boolean,
+  "risk_score": integer,
+  "reason": string
+}
+
+Rules:
+- risk_score must be an integer from 0 to 10.
+- Set is_malicious=true only when the evidence strongly indicates hostile behavior such as brute force, port scanning, exploit probing, malware callback, credential stuffing, or repeated policy violations.
+- Do not classify an IP as malicious from one isolated low-severity alert.
+- Treat private RFC1918 IP addresses as internal unless the event clearly says they are compromised.
+- If evidence is weak, ambiguous, or looks like normal LAN discovery, return is_malicious=false.
+- The reason must be short, specific, and based only on the provided event summary.
+- Never recommend blocking whitelisted, internal infrastructure, DNS resolvers, gateways, or monitoring systems.
+```
+
+Expected DeepSeek response:
+
+```json
+{
+  "is_malicious": true,
+  "risk_score": 9,
+  "reason": "Repeated SSH brute-force attempts from the same external IP within 5 minutes."
+}
+```
+
+Validate the response strictly before taking action.
+
+### 6. MikroTik Firewall Strategy
+
+Do not create one firewall rule per IP.
+
+Use one MikroTik address-list:
+
+```routeros
+/ip/firewall/address-list
+add list=ai_blacklist address=1.2.3.4 timeout=7d comment="AI Shield: reason"
+```
+
+Use one or two firewall rules only:
+
+```routeros
+/ip/firewall/filter
+add chain=input src-address-list=ai_blacklist action=drop comment="AI Shield blacklist input"
+add chain=forward src-address-list=ai_blacklist action=drop comment="AI Shield blacklist forward"
+```
+
+The backend should only add or refresh IPs in the address-list.
+
+Requirements:
+
+* Use timeout, default 7d.
+* Check whitelist before SSH command.
+* Deduplicate already-blocked IPs.
+* Log all SSH commands and results to audit.log.
+* Retry SSH failures with exponential backoff.
+* Do not crash if MikroTik SSH is down.
+
+### 7. Error Handling and Self-Healing
+
+The service must not crash when:
+
+* MikroTik SSH is down
+* ntopng API is down
+* DeepSeek API timeout
+* eve.json rotates
+* invalid JSON appears in eve.json
+* database is temporarily locked
+* Telegram API fails
+
+Use:
+
+* retry with exponential backoff
+* structured logs
+* bounded queues
+* graceful degradation
+* health status flags
+
+### 8. Health Check Endpoint
+
+Implement:
+
+```http
+GET /health
+```
+
+Return:
+
+```json
+{
+  "status": "ok",
+  "services": {
+    "mikrotik_ssh": {
+      "ok": true,
+      "latency_ms": 15
+    },
+    "ntopng": {
+      "ok": true,
+      "latency_ms": 24
+    },
+    "deepseek": {
+      "ok": true,
+      "latency_ms": 180
+    },
+    "database": {
+      "ok": true
+    },
+    "eve_tailer": {
+      "ok": true,
+      "last_event_at": "2026-07-10T01:00:00Z"
+    }
+  }
+}
+```
+
+### 9. Config Hot Reload
+
+Support hot-reloading for:
+
+* whitelist.txt
+* thresholds.yaml
+
+Do not require container restart.
+
+Implementation options:
+
+* watchdog
+* periodic file mtime check every 5 seconds
+
+### 10. Data Retention and Pruning
+
+Do not keep infinite logs.
+
+Implement:
+
+* Keep Suricata parsed alerts for 7 days.
+* Keep AI threat reports for 30 days, configurable.
+* Keep audit logs longer, configurable.
+
+Add env vars:
+
+```env
+RETENTION_ALERT_DAYS=7
+RETENTION_AI_REPORT_DAYS=30
+RETENTION_AUDIT_DAYS=90
+```
+
+Run pruning periodically, for example every 6 hours.
+
+### 11. Logging and Audit
+
+Backend logs:
+
+* structured JSON logs to stdout/stderr
+* compatible with docker logs
+
+Audit log:
+
+* Write every mitigation decision to audit.log
+* Include:
+
+  * timestamp
+  * src_ip
+  * risk_score
+  * reason
+  * dry_run true/false
+  * action
+  * MikroTik result
+  * DeepSeek latency
+  * decision source
+
+Example audit entry:
+
+```json
+{
+  "timestamp": "2026-07-10T01:05:00Z",
+  "src_ip": "185.220.101.10",
+  "risk_score": 9,
+  "reason": "Repeated SSH brute-force attempts",
+  "dry_run": false,
+  "action": "mikrotik_address_list_add",
+  "address_list": "ai_blacklist",
+  "result": "success",
+  "deepseek_latency_ms": 1240
+}
+```
+
+### 12. Telegram Alerting
+
+When a new IP is blocked or would be blocked in dry-run mode, send Telegram notification.
+
+Message format:
+
+```text
+AI Shield Alert
+
+IP: 185.220.101.10
+Risk: 9/10
+Action: BLOCKED
+Reason: Repeated SSH brute-force attempts
+Dry-run: false
+```
+
+Telegram failures must not break mitigation flow.
+
+### 13. Graceful Shutdown
+
+Handle SIGTERM/SIGINT correctly.
+
+On shutdown:
+
+* stop background tasks
+* close database connection
+* close SSH sessions
+* flush audit logs
+* stop log tailer cleanly
+
+Use FastAPI lifespan.
+
+### 14. Backup / Export
+
+Provide a script:
+
+```bash
+python scripts/export_reports.py --output /exports/security_reports.csv
+```
+
+It should export:
+
+* blocked IP history
+* AI threat reports
+* audit actions
+
+Support CSV and optionally SQLite copy.
+
+### 15. Docker Compose Requirements
+
+Create docker-compose.yml with:
+
+* shield-backend
+* shield-frontend
+* optional reverse proxy
+* mounted volumes:
+
+  * Suricata eve.json read-only
+  * app data
+  * whitelist.txt
+  * thresholds.yaml
+  * audit logs
+* resource caps:
+
+  * backend memory limit
+  * frontend memory limit
+  * CPU limits
+
+Example structure:
+
+```yaml
+services:
+  shield-backend:
+    build: ./shield-backend
+    container_name: shield-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - /var/log/suricata/eve.json:/var/log/suricata/eve.json:ro
+      - ./data:/data
+      - ./config/whitelist.txt:/app/whitelist.txt:ro
+      - ./config/thresholds.yaml:/app/thresholds.yaml:ro
+      - ./logs:/logs
+    ports:
+      - "8088:8088"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+```
+
+If docker compose local mode does not enforce deploy limits, also provide compatible options such as `mem_limit` and `cpus`.
+
+### 16. Frontend Requirements
+
+React/Tailwind dashboard:
+
+Pages:
+
+* Login
+* Overview
+* Suricata Alerts
+* AI Decisions
+* Blocked IP History
+* MikroTik Health
+* ntopng Stats
+* Audit Log Viewer
+* Settings
+
+Use API calls to backend only. Do not expose:
+
+* DeepSeek key
+* MikroTik credentials
+* ntopng credentials
+
+For embedding MikroTik web pages:
+
+* Explain that X-Frame-Options/CORS may block iframe embedding.
+* Provide a safe reverse proxy option only for internal LAN.
+* Do not disable browser security globally.
+* Prefer links or backend proxy with strict allowlist.
+
+### 17. Required Output From You
+
+Please provide:
+
+1. Full architecture explanation.
+2. Folder structure.
+3. docker-compose.yml.
+4. Backend code skeleton.
+5. FastAPI lifespan with background workers.
+6. Async Suricata eve.json tailer.
+7. Aggregator and threshold engine.
+8. DeepSeek client with strict JSON validation.
+9. MikroTik SSH executor with retry/backoff.
+10. Dry-run and whitelist enforcement.
+11. JWT + TOTP auth implementation.
+12. /health endpoint.
+13. Telegram notifier.
+14. Audit logger.
+15. Database models.
+16. Log pruning task.
+17. Export script.
+18. Frontend React/Tailwind skeleton.
+19. Setup instructions for Ubuntu Server.
+20. MikroTik firewall commands.
+
+## Critical Coding Rules
+
+* Use async Python where possible.
+* Never block the FastAPI event loop with long SSH/API calls.
+* If using blocking libraries like paramiko, run them in `asyncio.to_thread`.
+* Use bounded asyncio queues.
+* Use exponential backoff.
+* Validate all external inputs.
+* No hardcoded secrets.
+* Use .env.
+* Write clean, modular, production-quality code.
+* Prefer safe defaults:
+
+  * DRY_RUN=true
+  * whitelist enabled
+  * 7-day MikroTik blacklist timeout
+  * AI_BLOCK_RISK_SCORE=8
+* Include comments only where useful.
+* Keep code maintainable and easy to extend.
+
+Before writing code, first review the design for possible failure points and explain how you will avoid them. Then implement the system step by step.
+
+## Additional Requirements: Polished UI/UX, Smooth Realtime Dashboard, and Complete ntopng / Suricata / MikroTik Coverage
+
+Please extend the current implementation with a production-grade, polished, smooth, and stable dashboard experience.
+
+### 1. UI / UX Quality Requirements
+
+Build the frontend as a modern security operations dashboard, not a basic admin panel.
+
+Requirements:
+
+* Use a clean, professional, responsive layout.
+* Use React + TailwindCSS with a modern component structure.
+* Design should feel similar to a lightweight SOC dashboard.
+* Use dark mode by default, with optional light mode.
+* Add smooth transitions, loading skeletons, empty states, error states, and retry buttons.
+* Use cards, status badges, severity colors, compact tables, charts, and realtime activity feeds.
+* Avoid heavy UI libraries unless necessary.
+* Keep the dashboard lightweight and fast on low-power home/office servers.
+* The UI must remain usable on desktop, tablet, and mobile.
+
+Recommended pages:
+
+* Overview
+* Realtime Security Feed
+* Suricata Alerts
+* Suricata Signatures / Categories
+* AI Threat Reports
+* Blocked IP History
+* MikroTik Health
+* MikroTik Interfaces
+* ntopng Traffic Overview
+* ntopng Hosts
+* ntopng Flows
+* ntopng Top Applications
+* Audit Logs
+* Settings
+* System Health
+
+Dashboard layout:
+
+* Left sidebar navigation.
+* Top status bar showing:
+
+  * Backend health
+  * Suricata tailer status
+  * ntopng API status
+  * MikroTik SSH status
+  * DeepSeek status
+  * Dry-run mode status
+* Main content area with cards, charts, and tables.
+* Realtime notification/toast system for new AI decisions or blocked IPs.
+
+### 2. Realtime Dashboard Updates
+
+Add realtime frontend updates using Server-Sent Events or WebSocket.
+
+Preferred: Server-Sent Events for simplicity and stability.
+
+Realtime events should include:
+
+* New Suricata alert
+* New aggregated threat event
+* New AI decision
+* New blocked IP
+* MikroTik health update
+* ntopng traffic update
+* Backend health state change
+* Dry-run action
+* Audit log entry
+
+Requirements:
+
+* Reconnect automatically if SSE/WebSocket disconnects.
+* Use exponential backoff on reconnect.
+* Do not spam the browser with too many events.
+* Batch low-priority updates.
+* Keep the UI smooth even when Suricata logs are busy.
+* Backend must use bounded queues to prevent memory growth.
+
+### 3. Better Overview Page
+
+The Overview page must show:
+
+* Security status summary:
+
+  * Total alerts in last 1h / 24h / 7d
+  * AI-analyzed threats
+  * Blocked IPs
+  * Dry-run would-block count
+  * Critical alerts count
+* Top malicious source IPs
+* Top targeted internal IPs
+* Top Suricata signatures
+* Top Suricata categories
+* ntopng current throughput
+* ntopng top hosts
+* ntopng top applications
+* MikroTik CPU / RAM / uptime
+* MikroTik WAN/LAN interface traffic
+* Recent audit actions
+* Recent AI decisions
+
+Use charts where useful:
+
+* Alerts over time
+* Traffic over time
+* Top talkers
+* Top protocols
+* Top applications
+* Blocked IP trend
+
+### 4. Complete Suricata Integration
+
+Suricata support must be more complete than just reading alert lines.
+
+Parse and normalize these event types from eve.json when available:
+
+* alert
+* dns
+* http
+* tls
+* ssh
+* flow
+* stats
+* anomaly
+* fileinfo
+
+For alerts, extract:
+
+* timestamp
+* src_ip
+* src_port
+* dest_ip
+* dest_port
+* proto
+* app_proto
+* signature
+* signature_id
+* category
+* severity
+* action
+* flow_id
+* in_iface
+* packet_info if available
+
+Suricata pages:
+
+#### Suricata Alerts Page
+
+* Filter by time range
+* Filter by severity
+* Filter by signature
+* Filter by category
+* Filter by source IP
+* Filter by destination IP
+* Filter by protocol
+* Search box
+* Pagination
+* Auto-refresh
+* Alert detail drawer/modal
+
+#### Suricata Alert Detail
+
+Show:
+
+* Full normalized alert
+* Raw JSON event
+* Related alerts from same source IP
+* Related alerts against same destination IP
+* AI analysis if available
+* Block status
+* Whitelist status
+* Suggested action
+
+#### Suricata Analytics
+
+Show:
+
+* Alerts per minute/hour
+* Top signatures
+* Top categories
+* Top source countries if GeoIP is available
+* Top attacked internal hosts
+* Severity distribution
+* Protocol distribution
+
+Important:
+
+* Handle eve.json rotation safely.
+* Handle invalid JSON lines.
+* Never crash if Suricata is stopped.
+* Keep a tailer checkpoint/state so duplicate processing is minimized.
+* Add backpressure if logs are too noisy.
+
+### 5. Complete ntopng REST API Integration
+
+Use ntopng REST API only. Do not scrape the web UI.
+
+Implement a dedicated ntopng client module with timeout, retry, authentication, and health checks.
+
+The ntopng dashboard should include:
+
+#### Traffic Overview
+
+* Current RX/TX throughput
+* Packets per second
+* Active hosts
+* Active flows
+* Local vs remote traffic
+* TCP/UDP/ICMP breakdown
+* Application/protocol breakdown
+* Historical traffic chart
+
+#### Hosts Page
+
+Show:
+
+* Top local hosts by traffic
+* Top remote hosts by traffic
+* Host IP
+* Hostname if available
+* MAC address if available
+* VLAN if available
+* RX bytes
+* TX bytes
+* Total bytes
+* Active flows
+* Seen protocols
+* Risk score if ntopng provides it
+* Last seen time
+
+#### Flows Page
+
+Show:
+
+* Active flows
+* Client/server IP and port
+* Protocol
+* Application
+* Bytes
+* Packets
+* Duration
+* Throughput
+* Risk status if available
+* Flow details modal
+
+#### Applications Page
+
+Show:
+
+* Top L7 applications
+* Traffic volume by app
+* Host distribution by app
+* Time-series chart
+
+#### ntopng Health
+
+Show:
+
+* API reachable/unreachable
+* Latency
+* ntopng version if available
+* Monitored interface
+* Last successful poll time
+* API error message if down
+
+Requirements:
+
+* Make ntopng polling interval configurable.
+* Cache ntopng API responses briefly to avoid overloading ntopng.
+* If ntopng is down, frontend should show degraded status instead of crashing.
+* Add a backend abstraction layer so ntopng endpoints can be adjusted easily.
+
+Add env vars:
+
+```env
+NTOPNG_BASE_URL=http://10.100.101.250:3000
+NTOPNG_USERNAME=admin
+NTOPNG_PASSWORD=
+NTOPNG_INTERFACE=
+NTOPNG_TIMEOUT_SECONDS=5
+NTOPNG_POLL_INTERVAL_SECONDS=10
+NTOPNG_CACHE_TTL_SECONDS=5
+```
+
+### 6. Complete MikroTik Integration
+
+MikroTik support must include both health monitoring and security mitigation.
+
+Use SSH commands safely. Do not expose MikroTik credentials to the frontend.
+
+#### MikroTik Health
+
+Collect:
+
+* RouterOS version
+* Board name/model
+* Uptime
+* CPU load
+* CPU count/frequency if available
+* Total memory
+* Free memory
+* Used memory percentage
+* Total HDD/storage
+* Free HDD/storage
+* Temperature if available
+* Voltage if available
+* Fan status if available
+
+#### MikroTik Interface Monitoring
+
+Collect:
+
+* Interface name
+* Running status
+* Disabled status
+* RX bytes
+* TX bytes
+* RX packets
+* TX packets
+* RX/TX rate if available
+* Link speed if available
+* MAC address
+* Comment
+
+Show:
+
+* WAN traffic card
+* LAN traffic card
+* Per-interface table
+* Interface traffic chart
+* Interface status badges
+
+#### MikroTik Firewall / Address List
+
+Show:
+
+* Current `ai_blacklist` entries
+* IP address
+* Timeout
+* Dynamic/static
+* Comment
+* Created time if available
+* Reason if stored in comment
+* Source decision ID if available
+
+Allow safe actions from UI:
+
+* View blocked IP details
+* Manually unblock IP
+* Manually add IP to blacklist
+* Extend timeout
+* Mark as false positive
+* Add IP/CIDR to whitelist
+
+All manual actions must:
+
+* Require authenticated user
+* Be audited
+* Validate input strictly
+* Never allow blocking whitelisted IPs
+* Respect dry-run mode unless explicitly configured otherwise
+
+Add env vars:
+
+```env
+MIKROTIK_HOST=10.100.101.1
+MIKROTIK_PORT=22
+MIKROTIK_USERNAME=
+MIKROTIK_PASSWORD=
+MIKROTIK_TIMEOUT_SECONDS=8
+MIKROTIK_POLL_INTERVAL_SECONDS=10
+MIKROTIK_BLACKLIST_NAME=ai_blacklist
+MIKROTIK_BLACKLIST_TIMEOUT=7d
+```
+
+### 7. Better AI Threat Report Page
+
+AI Threat Reports page should show:
+
+* Source IP
+* Destination IPs
+* Event type
+* Alert count
+* Time window
+* Signatures involved
+* Severity summary
+* DeepSeek risk score
+* DeepSeek reason
+* Decision:
+
+  * ignored
+  * suspicious
+  * would block
+  * blocked
+  * whitelist override
+  * failed mitigation
+* DeepSeek latency
+* Created time
+
+Add filters:
+
+* Risk score
+* Decision type
+* Source IP
+* Time range
+* Blocked only
+* Dry-run only
+* Whitelist override only
+
+Each report should have a detail view showing:
+
+* Aggregated summary sent to DeepSeek
+* DeepSeek raw JSON response
+* Validation result
+* Mitigation result
+* Related Suricata alerts
+* Audit trail
+
+### 8. Better Settings Page
+
+Settings page should include:
+
+* Dry-run mode display
+* Current threshold values
+* Current whitelist entries
+* AI risk threshold
+* MikroTik blacklist timeout
+* Retention settings
+* ntopng poll interval
+* MikroTik poll interval
+
+Allow editing only if implemented safely.
+
+If runtime editing is implemented:
+
+* Require admin role
+* Validate all values
+* Persist to config file or database
+* Audit all changes
+* Hot reload safely
+* Never expose secrets
+
+### 9. Roles and Authentication
+
+Extend authentication with basic roles:
+
+* admin
+* viewer
+
+Viewer can:
+
+* View dashboards
+* View alerts
+* View reports
+* View logs
+
+Admin can:
+
+* Add/remove blocked IPs
+* Add whitelist entries
+* Change thresholds
+* Toggle dry-run if runtime editing is supported
+* Export reports
+
+Requirements:
+
+* JWT access token
+* TOTP mandatory
+* Secure password hashing
+* No default weak credentials in production
+* Session expiration
+* Logout
+* Frontend route protection
+* Backend authorization checks on every sensitive endpoint
+
+### 10. Stability and Performance Requirements
+
+The dashboard must remain stable under noisy logs and temporary service outages.
+
+Backend must:
+
+* Use bounded queues
+* Use async workers
+* Use timeouts for every external call
+* Use retry with exponential backoff
+* Use circuit breaker behavior for failing services
+* Never block FastAPI event loop with Paramiko or slow file I/O
+* Use `asyncio.to_thread` for blocking SSH commands
+* Use pagination for large tables
+* Use database indexes for time, IP, severity, decision, and action
+* Avoid loading entire eve.json into memory
+* Avoid storing unbounded raw events
+* Prune old data periodically
+* Expose `/health` and `/metrics`
+
+Frontend must:
+
+* Avoid rendering thousands of rows at once
+* Use pagination or virtualization
+* Debounce filters/search
+* Handle API errors gracefully
+* Show stale/degraded state clearly
+* Continue working if realtime stream disconnects by falling back to polling
+
+### 11. API Endpoint Requirements
+
+Add clean REST endpoints:
+
+```http
+GET /api/overview
+GET /api/events/realtime
+GET /api/suricata/alerts
+GET /api/suricata/alerts/{id}
+GET /api/ai/reports
+GET /api/ai/reports/{id}
+GET /api/blocked-ips
+POST /api/blocked-ips
+DELETE /api/blocked-ips/{ip}
+GET /api/mikrotik/health
+GET /api/mikrotik/interfaces
+GET /api/mikrotik/address-list
+GET /api/ntopng/overview
+GET /api/ntopng/hosts
+GET /api/ntopng/flows
+GET /api/ntopng/applications
+GET /api/audit/logs
+GET /api/settings
+POST /api/settings/reload
+GET /api/health
+GET /api/metrics
+```
+
+All endpoints must:
+
+* Require authentication except `/health`
+* Validate query parameters
+* Support pagination where needed
+* Return consistent JSON response format
+* Never leak secrets
+
+### 12. Visual Design Guidance
+
+Use these UI patterns:
+
+* Severity badges:
+
+  * Critical
+  * High
+  * Medium
+  * Low
+  * Info
+* Service status badges:
+
+  * Online
+  * Degraded
+  * Offline
+  * Unknown
+* Decision badges:
+
+  * Blocked
+  * Would Block
+  * Ignored
+  * Whitelisted
+  * Failed
+* Cards:
+
+  * Alerts last 1h
+  * Blocked IPs
+  * AI high-risk decisions
+  * MikroTik CPU/RAM
+  * Current throughput
+  * ntopng active hosts
+* Charts:
+
+  * Line chart for alerts over time
+  * Line chart for traffic over time
+  * Bar chart for top signatures
+  * Bar chart for top applications
+  * Pie/donut chart for severity distribution
+
+Keep animations subtle and smooth. Do not overuse effects.
+
+### 13. MikroTik Embedded Web Page Handling
+
+For MikroTik embedded pages:
+
+* Explain clearly that direct iframe embedding may be blocked by X-Frame-Options or CORS.
+* Do not disable browser security.
+* Provide one of these safe options:
+
+  1. Open MikroTik WebFig in a new tab.
+  2. Use backend-controlled reverse proxy only for internal LAN.
+  3. Proxy only allowlisted paths.
+  4. Require admin authentication before proxy access.
+  5. Never proxy arbitrary URLs.
+
+If reverse proxy is implemented, add:
+
+* Strict upstream allowlist
+* No arbitrary URL parameter
+* Request timeout
+* Audit access
+* Admin-only access
+* Optional disable flag
+
+### 14. Implementation Priority
+
+Implement in this order:
+
+1. Backend core config and database models.
+2. Authentication with JWT + TOTP.
+3. Suricata eve.json tailer and parser.
+4. Aggregation and threshold engine.
+5. DeepSeek client with strict JSON validation.
+6. MikroTik SSH mitigation with dry-run and whitelist enforcement.
+7. ntopng REST client.
+8. Health endpoint and service status tracking.
+9. Realtime SSE events.
+10. Frontend layout and auth flow.
+11. Overview page.
+12. Suricata pages.
+13. AI reports and blocked IP pages.
+14. MikroTik pages.
+15. ntopng pages.
+16. Audit logs and settings.
+17. Export script, pruning, Docker Compose, and setup docs.
+
+### 15. Acceptance Criteria
+
+The final project is acceptable only if:
+
+* Dashboard looks polished, modern, and responsive.
+* UI does not freeze when many alerts arrive.
+* Suricata alert parsing works with eve.json rotation.
+* ntopng data is fetched through REST API only.
+* MikroTik health and interfaces are visible.
+* MikroTik blocking uses address-list only, not one firewall rule per IP.
+* Dry-run mode is safe by default.
+* Whitelist always overrides AI.
+* DeepSeek output is strictly JSON-validated.
+* Failed ntopng, MikroTik, Telegram, or DeepSeek does not crash the backend.
+* All sensitive actions are audited.
+* All secrets are in `.env`.
+* Docker Compose includes resource limits.
+* Setup instructions are clear enough to deploy on Ubuntu Server.
+
+## Additional Requirement: Prefer Official APIs, Native Exporters, and Existing Data Sources
+
+Do not manually reinvent low-level parsers or incomplete custom collectors when ntopng, Suricata, or MikroTik already provide official APIs, structured outputs, or native monitoring commands.
+
+The backend should act as an integration and normalization layer, not as a fragile custom reimplementation of each product.
+
+### 1. General Data Collection Strategy
+
+Use this priority order for data collection:
+
+1. Official REST API or native API.
+2. Official structured JSON/log output.
+3. Official CLI/SSH command with stable machine-readable output.
+4. Custom parsing only as a fallback.
+
+Avoid scraping web interfaces.
+
+Avoid guessing undocumented fields.
+
+Avoid relying on fragile UI HTML.
+
+Avoid hardcoding one specific response shape without validation.
+
+Each integration module must:
+
+* Have its own client class.
+* Use timeouts.
+* Use retries with backoff.
+* Validate response fields.
+* Gracefully handle missing fields.
+* Expose a normalized internal schema to the dashboard.
+* Keep raw source response optionally for debugging.
+* Never crash the backend if one external service is down.
+
+### 2. ntopng Integration: Use Official REST API
+
+For ntopng, use the official ntopng REST API only.
+
+Do not scrape ntopng web pages.
+
+The ntopng client should discover and use available REST endpoints for:
+
+* Interfaces
+* Interface statistics
+* Hosts
+* Host details
+* Active flows
+* Historical flows if available
+* L7 applications
+* L7 application categories
+* L4 protocols
+* ntopng alerts
+* Traffic timeseries if available
+* SNMP data if configured
+* ntopng health/version/interface status if available
+
+The implementation must not assume that all endpoints are available in every ntopng edition or version.
+
+If an endpoint is unavailable:
+
+* Mark that feature as unsupported.
+* Show a degraded/unsupported state in the frontend.
+* Continue running other features.
+
+Create an ntopng adapter layer:
+
+```text
+ntopng REST API
+  -> ntopng client
+  -> response validation
+  -> cache
+  -> normalized dashboard schema
+  -> frontend API
+```
+
+The Python backend should not try to calculate everything from raw packets if ntopng already provides the metric.
+
+Use ntopng as the source of truth for:
+
+* Top hosts
+* Active flows
+* Application protocols
+* Traffic volume
+* Throughput
+* Host risk/alert information if available
+* Interface traffic summary
+
+Add a capability discovery function:
+
+```text
+GET /api/ntopng/capabilities
+```
+
+It should show which ntopng features/endpoints are available.
+
+### 3. Suricata Integration: Use EVE JSON as the Official Structured Source
+
+For Suricata, use EVE JSON as the primary source.
+
+Do not create a custom packet parser.
+
+Do not try to parse pcap manually unless explicitly required later.
+
+The Suricata parser should support all common EVE event types when available:
+
+* alert
+* dns
+* http
+* tls
+* ssh
+* flow
+* stats
+* anomaly
+* fileinfo
+* netflow
+* drop
+* smtp
+* dnp3
+* smb
+* rdp
+* ftp
+* dhcp
+* quic
+
+The parser must be schema-tolerant:
+
+* Missing fields must not crash parsing.
+* Unknown event types should be stored as raw events or counted as unsupported.
+* Version differences between Suricata releases must be handled safely.
+* Raw JSON should be preserved for detail view.
+
+Use Suricata EVE fields when available:
+
+* timestamp
+* event_type
+* src_ip
+* src_port
+* dest_ip
+* dest_port
+* proto
+* app_proto
+* flow_id
+* in_iface
+* alert.signature
+* alert.signature_id
+* alert.category
+* alert.severity
+* alert.action
+* flow.pkts_toserver
+* flow.pkts_toclient
+* flow.bytes_toserver
+* flow.bytes_toclient
+* dns.rrname
+* http.hostname
+* http.url
+* tls.sni
+* ssh.client.software_version
+* fileinfo.filename
+
+Use `flow_id` to correlate related events.
+
+Example correlation:
+
+```text
+alert + http + tls + flow with the same flow_id
+```
+
+The AI engine should receive aggregated summaries built from Suricata EVE data, not raw packet dumps.
+
+### 4. MikroTik Integration: Prefer RouterOS REST API When Available, SSH Fallback
+
+For MikroTik, support two modes:
+
+1. RouterOS REST API mode.
+2. SSH command mode fallback.
+
+If RouterOS version supports REST API and HTTPS access is enabled, prefer REST API because it returns structured JSON-like responses and reduces fragile SSH text parsing.
+
+If REST API is unavailable, fallback to SSH.
+
+Add config:
+
+```env
+MIKROTIK_MODE=auto
+# auto | rest | ssh
+
+MIKROTIK_REST_BASE_URL=https://10.100.101.1/rest
+MIKROTIK_REST_VERIFY_TLS=false
+MIKROTIK_REST_TIMEOUT_SECONDS=8
+
+MIKROTIK_SSH_HOST=10.100.101.1
+MIKROTIK_SSH_PORT=22
+MIKROTIK_SSH_USERNAME=
+MIKROTIK_SSH_PASSWORD=
+```
+
+Behavior:
+
+* `auto`: try REST API first, fallback to SSH.
+* `rest`: use REST API only.
+* `ssh`: use SSH only.
+
+The MikroTik client should expose the same normalized methods regardless of backend mode:
+
+```python
+get_system_resource()
+get_routerboard()
+get_interfaces()
+get_interface_stats()
+get_firewall_address_list()
+add_address_list_entry()
+remove_address_list_entry()
+get_firewall_rules()
+ensure_ai_blacklist_rules()
+```
+
+### 5. MikroTik Data Sources to Use
+
+Use native RouterOS resources/commands for monitoring.
+
+Collect system health from:
+
+```routeros
+/system/resource/print
+/system/routerboard/print
+/system/health/print
+/system/package/print
+```
+
+Collect interface data from:
+
+```routeros
+/interface/print
+/interface/ethernet/print
+/interface/print stats
+/interface/print stats-detail
+/interface/monitor-traffic
+```
+
+Collect firewall/address-list data from:
+
+```routeros
+/ip/firewall/address-list/print
+/ip/firewall/filter/print
+```
+
+Mitigation must use address-list only:
+
+```routeros
+/ip/firewall/address-list/add list=ai_blacklist address=<ip> timeout=7d comment="AI Shield: <reason>"
+```
+
+Do not create one firewall rule per blocked IP.
+
+Only ensure these firewall rules exist once:
+
+```routeros
+/ip/firewall/filter/add chain=input src-address-list=ai_blacklist action=drop comment="AI Shield blacklist input"
+/ip/firewall/filter/add chain=forward src-address-list=ai_blacklist action=drop comment="AI Shield blacklist forward"
+```
+
+### 6. Capability Detection
+
+Add capability detection for all integrations.
+
+Backend should expose:
+
+```http
+GET /api/capabilities
+```
+
+Return example:
+
+```json
+{
+  "suricata": {
+    "eve_json": true,
+    "event_types_seen": ["alert", "dns", "http", "tls", "flow", "stats"],
+    "eve_path": "/var/log/suricata/eve.json"
+  },
+  "ntopng": {
+    "rest_api": true,
+    "interfaces": true,
+    "hosts": true,
+    "flows": true,
+    "applications": true,
+    "alerts": true,
+    "timeseries": false
+  },
+  "mikrotik": {
+    "mode": "rest",
+    "rest_api": true,
+    "ssh": true,
+    "system_resource": true,
+    "interfaces": true,
+    "interface_stats": true,
+    "monitor_traffic": true,
+    "firewall_address_list": true
+  }
+}
+```
+
+The frontend should use this endpoint to hide or mark unsupported features.
+
+### 7. Do Not Over-Code Missing Data
+
+If ntopng, Suricata, or MikroTik does not provide a field directly:
+
+* Do not fake it.
+* Do not invent values.
+* Show `unknown`, `unsupported`, or `not available`.
+* Log the missing capability clearly.
+* Keep the system stable.
+
+Examples:
+
+* If ntopng does not provide host risk score, show `N/A`.
+* If MikroTik health temperature is unavailable, show `unsupported`.
+* If Suricata does not emit TLS events, show TLS visibility as disabled or not seen.
+* If ntopng timeseries endpoint is unavailable, fallback to backend short-term polling cache.
+
+### 8. Optional Existing Exporters / External Tools
+
+Where useful, allow integration with existing exporters instead of custom Python collectors.
+
+Supported optional sources:
+
+* Prometheus node_exporter for Ubuntu server metrics.
+* MikroTik Prometheus exporter if the user already runs one.
+* ntopng built-in timeseries/API.
+* Suricata EVE JSON.
+* Suricata stats event from EVE.
+* Telegraf inputs if already available.
+
+Do not require Prometheus for the first version, but design the backend so Prometheus support can be added later.
+
+Add optional config:
+
+```env
+PROMETHEUS_ENABLED=false
+PROMETHEUS_BASE_URL=http://10.100.101.250:9090
+MIKROTIK_EXPORTER_ENABLED=false
+NODE_EXPORTER_ENABLED=false
+```
+
+### 9. Normalized Internal Schema
+
+Create normalized schemas so the frontend does not depend directly on raw ntopng, MikroTik, or Suricata formats.
+
+Examples:
+
+```python
+class NormalizedHost:
+    ip: str
+    hostname: str | None
+    mac: str | None
+    rx_bytes: int | None
+    tx_bytes: int | None
+    total_bytes: int | None
+    active_flows: int | None
+    applications: list[str]
+    risk_score: int | None
+    source: str
+    raw: dict | None
+```
+
+```python
+class NormalizedInterface:
+    name: str
+    type: str | None
+    running: bool | None
+    disabled: bool | None
+    rx_bytes: int | None
+    tx_bytes: int | None
+    rx_rate_bps: int | None
+    tx_rate_bps: int | None
+    link_speed: str | None
+    mac_address: str | None
+    source: str
+    raw: dict | None
+```
+
+```python
+class NormalizedSecurityEvent:
+    timestamp: str
+    event_type: str
+    src_ip: str | None
+    src_port: int | None
+    dest_ip: str | None
+    dest_port: int | None
+    proto: str | None
+    app_proto: str | None
+    severity: int | None
+    signature: str | None
+    category: str | None
+    flow_id: str | None
+    source: str
+    raw: dict
+```
+
+### 10. Testing Requirement
+
+Add integration tests with sample responses.
+
+Include sample fixture files:
+
+```text
+tests/fixtures/suricata/eve_alert.jsonl
+tests/fixtures/suricata/eve_dns.jsonl
+tests/fixtures/suricata/eve_tls.jsonl
+tests/fixtures/ntopng/hosts.json
+tests/fixtures/ntopng/flows.json
+tests/fixtures/ntopng/applications.json
+tests/fixtures/mikrotik/system_resource_rest.json
+tests/fixtures/mikrotik/interface_stats_rest.json
+tests/fixtures/mikrotik/address_list_rest.json
+tests/fixtures/mikrotik/system_resource_ssh.txt
+tests/fixtures/mikrotik/interface_stats_ssh.txt
+```
+
+Tests must verify:
+
+* Suricata EVE parsing.
+* ntopng REST response normalization.
+* MikroTik REST response normalization.
+* MikroTik SSH fallback parsing.
+* Missing fields do not crash.
+* Unsupported endpoints are reported as unsupported.
+* Whitelist blocks mitigation.
+* Dry-run prevents real MikroTik changes.
+* REST failure falls back to SSH when `MIKROTIK_MODE=auto`.
+
+### 11. Acceptance Criteria for Data Completeness
+
+The implementation is not acceptable if it only hardcodes a few fake metrics.
+
+It must use real available data sources:
+
+* ntopng REST API for hosts, flows, interfaces, applications, and alerts where available.
+* Suricata EVE JSON for alerts and protocol events.
+* MikroTik REST API or SSH for system resource, health, interface stats, firewall address-list, and mitigation.
+* Capability detection for unsupported features.
+* Normalized schemas for frontend stability.
+* Clear degraded states when data is unavailable.

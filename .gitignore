@@ -1,24 +1,34 @@
-# Env
+# Environment
 .env
 
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
 dist/
-*.db
-data/
+build/
+.venv/
+venv/
+*.egg
 
 # Node
 node_modules/
-dist/
-.vite/
+shield-frontend/dist/
 
 # IDE
 .idea/
 .vscode/
 *.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Data (generated at runtime)
+data/*.db
+logs/*.log
+
+# Docker
+*.log

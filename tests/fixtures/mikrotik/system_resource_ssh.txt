@@ -1,0 +1,17 @@
+uptime: 3w5d12h34m56s
+version: 7.15.2 (stable)
+build-time: Jun/15/2026 10:30:00
+factory-software: 7.0
+free-memory: 128974848KiB
+total-memory: 268435456KiB
+cpu: ARMv7
+cpu-count: 4
+cpu-frequency: 1400MHz
+cpu-load: 15%
+free-hdd-space: 98765432KiB
+total-hdd-space: 134217728KiB
+write-sect-since-reboot: 123456
+write-sect-total: 12345678
+architecture-name: arm
+board-name: hAP ac3
+platform: MikroTik
