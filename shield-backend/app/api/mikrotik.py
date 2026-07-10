@@ -38,7 +38,7 @@ async def get_mikrotik_health(request: Request, _current_user: User = Depends(ge
                 "error": {"code": "MIKROTIK_NOT_CONFIGURED", "message": "MikroTik service not initialized"}}
 
     collector = MikroTikHealthCollector(mikrotik)
-    result = await collector.collect_all(include_live_rates=False)
+    result = await collector.collect_all()
 
     return {
         "success": result.success,

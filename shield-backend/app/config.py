@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     NTOPNG_BASE_URL: str = "http://10.100.101.250:3000"
     NTOPNG_USER: str = "admin"
     NTOPNG_PASSWORD: str = ""
+    NTOPNG_DEFAULT_IFID: str = ""
+    NTOPNG_DEFAULT_INTERFACE: str = ""
+    NTOPNG_CONNECT_TIMEOUT: int = 5
+    NTOPNG_READ_TIMEOUT: int = 15
+    NTOPNG_CACHE_TTL: int = 5
 
     # --- Auth ---
     JWT_SECRET: str = "change-me"
